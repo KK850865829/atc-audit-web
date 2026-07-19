@@ -651,6 +651,20 @@ function prevQuarterStartDate(year, quarter) {
   return year + '/' + qStartMonth[quarter] + '/1';
 }
 
+function qDateOffset(dateStr, days) {
+  // Parse "YYYY/M/D" and offset by N days, return normalized "YYYY/M/D"
+  const parts = dateStr.split('/').map(Number);
+  const d = new Date(parts[0], parts[1] - 1, parts[2]);
+  d.setDate(d.getDate() + days);
+  return d.getFullYear() + '/' + (d.getMonth() + 1) + '/' + d.getDate();
+}
+
+function qDateNum(dateStr) {
+  // Convert "YYYY/M/D" to a comparable number YYYYMMDD
+  const p = dateStr.split('/').map(Number);
+  return p[0] * 10000 + p[1] * 100 + p[2];
+}
+
 function parseQuarterFromFilename(path) {
   const m = path.match(/(\d{2,4})\s*年+?\s*第?\s*([一二三四1-4])\s*季度/);
   if (!m) return { year: null, quarter: null };
@@ -875,10 +889,14 @@ function runQuarterlyChecks(allDocs) {
       studentIssues.push('本次评估日期错误');
     }
 
-    // 2. 上次评估日期 — 允许上季度第一天之前的日期
+    // 2. 上次评估日期 — 允许上季度第一天前后10天，或上季度末日期
     const expectedLast = prevQuarterEndDate(year, quarter);
     const prevQStart = prevQuarterStartDate(year, quarter);
-    if (doc.last_date && doc.last_date !== expectedLast && doc.last_date >= prevQStart) {
+    const prevQStartEarly = qDateOffset(prevQStart, -10);
+    const prevQStartLate = qDateOffset(prevQStart, 10);
+    const ldNum = qDateNum(doc.last_date);
+    if (doc.last_date && doc.last_date !== expectedLast &&
+        (ldNum < qDateNum(prevQStartEarly) || ldNum > qDateNum(prevQStartLate))) {
       studentIssues.push('上次评估日期错误');
     }
 
