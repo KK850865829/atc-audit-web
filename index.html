@@ -1198,21 +1198,29 @@ async function processRarArchive(file) {
   const filesObj = await archiveInstance.extractFiles();
 
   // Recursively collect .docx and .xlsx files from extracted tree
+  // NOTE: libarchive.js creates File objects in a Web Worker, so instanceof File
+  // does NOT work across worker boundaries. Use duck-typing instead.
   const docxFiles = [], xlsxFiles = [];
+  function isFileLike(obj) {
+    return obj && typeof obj === 'object' && typeof obj.arrayBuffer === 'function' && typeof obj.name === 'string';
+  }
   function collect(obj, prefix) {
     for (const name of Object.keys(obj)) {
       if (name.startsWith('~$')) continue;
       const item = obj[name];
       const fullPath = prefix + name;
-      if (item instanceof File) {
+      if (isFileLike(item)) {
         if (name.endsWith('.docx')) docxFiles.push({ file: item, name: name, fullPath: fullPath });
         else if (name.endsWith('.xlsx')) xlsxFiles.push({ file: item, name: name, fullPath: fullPath });
-      } else if (typeof item === 'object' && item !== null) {
+      } else if (typeof item === 'object' && item !== null && !isFileLike(item)) {
         collect(item, fullPath + '/');
       }
     }
   }
   collect(filesObj, '');
+  console.log('[RAR] Extracted tree keys:', Object.keys(filesObj));
+  console.log('[RAR] Found xlsx:', xlsxFiles.length, 'docx:', docxFiles.length);
+  xlsxFiles.forEach(f => console.log('[RAR] xlsx:', f.name, 'fullPath:', f.fullPath));
 
   // Determine mode
   if (xlsxFiles.length > 0 && docxFiles.length === 0) {
@@ -1415,7 +1423,14 @@ async function startQuarterlyAudit() {
 
   // Step 3: 执行检查
   setStep(3, 'active');
+  console.log('[Audit] allDocs:', allDocs.length, 'failed:', failed.length,
+    'currentDocs:', allDocs.filter(d => d._is_current).length,
+    'prevDocs:', allDocs.filter(d => !d._is_current).length);
+  allDocs.forEach(d => console.log('[Audit] doc:', d.student_name, 'year:', d.year, 'q:', d.quarter,
+    'is_current:', d._is_current, 'date:', d.this_date, 'qual:', d.qualification,
+    'sig:', d.trainer_sig, 'eval:', d.eval_filled, 'total_seq:', d.total_seq, 'year_seq:', d.year_seq));
   const issues = runQuarterlyChecks(allDocs);
+  console.log('[Audit] issues found:', issues.length);
   setStep(3, 'done');
   setProgress(80);
 
@@ -1437,6 +1452,13 @@ async function startQuarterlyAudit() {
     excelData: excelData,
     failed: failed,
     isQuarterly: true,
+    _debug: {
+      totalParsed: allDocs.length,
+      currentCount: currentDocs.length,
+      prevCount: allDocs.filter(d => !d._is_current).length,
+      failedCount: failed.length,
+      issuesFound: issues.length,
+    },
   };
   setStep(4, 'done');
   setProgress(100);
@@ -1450,6 +1472,24 @@ function showResults() {
   document.getElementById('statStudents').textContent = auditResults.totalStudents;
   document.getElementById('statIssues').textContent = auditResults.totalIssues;
   document.getElementById('statAffected').textContent = auditResults.studentsWithIssues;
+
+  // Show debug diagnostic info
+  if (auditResults._debug) {
+    const dbg = auditResults._debug;
+    let dbgHtml = '<div style="background:#FFF8E1;border:1px solid #FFE082;border-radius:8px;padding:12px;margin-bottom:16px;font-size:13px;color:#795548">';
+    dbgHtml += '<b>诊断信息：</b> ';
+    dbgHtml += '解析成功 ' + dbg.totalParsed + ' 份 | ';
+    dbgHtml += '当前季度 ' + dbg.currentCount + ' 份 | ';
+    dbgHtml += '上季度 ' + dbg.prevCount + ' 份 | ';
+    dbgHtml += '解析失败 ' + dbg.failedCount + ' 份 | ';
+    dbgHtml += '发现问题 ' + dbg.issuesFound + ' 条';
+    if (auditResults.failed && auditResults.failed.length > 0) {
+      dbgHtml += '<br><b>失败文件：</b>' + auditResults.failed.map(f => f.name + '(' + f.error + ')').join(', ');
+    }
+    dbgHtml += '</div>';
+    const statsGrid = document.querySelector('.stats-grid');
+    if (statsGrid) statsGrid.insertAdjacentHTML('afterend', dbgHtml);
+  }
 
   const listEl = document.getElementById('resultsList');
   listEl.innerHTML = '';
