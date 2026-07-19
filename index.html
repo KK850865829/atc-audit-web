@@ -729,9 +729,9 @@ async function processZipArchive(file) {
 }
 
 async function processRarArchive(file) {
-  // Use libarchive.js (WASM-based, supports RAR v4/v5) from jsdelivr CDN
-  const { Archive } = await import('https://cdn.jsdelivr.net/npm/libarchive.js/dist/libarchive.js');
-  await Archive.init({ workerUrl: 'https://cdn.jsdelivr.net/npm/libarchive.js/dist/worker-bundle.js' });
+  // Use libarchive.js hosted on same origin (no external CDN dependency)
+  const { Archive } = await import('./libarchive.js');
+  await Archive.init({ workerUrl: './worker-bundle.js' });
 
   const archiveInstance = await Archive.open(file);
   const filesObj = await archiveInstance.extractFiles();
