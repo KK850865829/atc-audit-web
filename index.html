@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<title>管制员培训月报表审核系统</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;font-size:15px;line-height:1.6;color:#333;background:#EDEDED;min-height:100vh;overflow-x:hidden}
+.navbar{position:fixed;top:0;left:0;right:0;z-index:100;height:48px;background:linear-gradient(135deg,#07C160,#06AD56);display:flex;align-items:center;justify-content:center;box-shadow:0 1px 4px rgba(0,0,0,.12)}
+.navbar-title{color:#fff;font-size:17px;font-weight:600;letter-spacing:.5px}
+.container{padding:60px 16px 30px;max-width:600px;margin:0 auto}
+.card{background:#fff;border-radius:12px;padding:20px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.card-title{font-size:16px;font-weight:600;color:#333;margin-bottom:12px}
+.upload-zone{border:2px dashed #C8D0D8;border-radius:12px;padding:40px 20px;text-align:center;cursor:pointer;transition:all .2s;background:#F8FAFB}
+.upload-zone:hover,.upload-zone.dragover{border-color:#07C160;background:#F0FBF4}
+.upload-icon{font-size:48px;margin-bottom:12px;color:#07C160}
+.upload-text{font-size:15px;color:#666;margin-bottom:8px}
+.upload-hint{font-size:13px;color:#999}
+.btn{display:block;width:100%;padding:12px;border:none;border-radius:8px;font-size:16px;font-weight:500;cursor:pointer;transition:all .2s;text-align:center}
+.btn-primary{background:#07C160;color:#fff}
+.btn-primary:hover{background:#06AD56}
+.btn-primary:disabled{background:#A8E6C1;cursor:not-allowed}
+.btn-outline{background:#fff;color:#07C160;border:1px solid #07C160}
+.btn-outline:hover{background:#F0FBF4}
+.progress-card{display:none}
+.progress-steps{list-style:none}
+.progress-step{display:flex;align-items:center;padding:10px 0;border-bottom:1px solid #F0F0F0;font-size:14px;color:#999}
+.progress-step:last-child{border-bottom:none}
+.progress-step.active{color:#07C160;font-weight:500}
+.progress-step.done{color:#333}
+.step-icon{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin-right:12px;font-size:12px;flex-shrink:0;background:#E8E8E8;color:#999}
+.progress-step.active .step-icon{background:#07C160;color:#fff}
+.progress-step.done .step-icon{background:#07C160;color:#fff}
+.progress-bar{height:4px;background:#E8E8E8;border-radius:2px;margin-top:12px;overflow:hidden}
+.progress-fill{height:100%;background:#07C160;border-radius:2px;transition:width .3s;width:0}
+.stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}
+.stat-item{background:#F8FAFB;border-radius:8px;padding:16px;text-align:center}
+.stat-value{font-size:28px;font-weight:700;color:#07C160}
+.stat-label{font-size:13px;color:#999;margin-top:4px}
+.student-item{border:1px solid #E8E8E8;border-radius:8px;margin-bottom:8px;overflow:hidden}
+.student-header{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;cursor:pointer;background:#FAFAFA;transition:background .2s}
+.student-header:hover{background:#F0F0F0}
+.student-name{font-weight:500;font-size:14px}
+.student-count{font-size:12px;color:#999;background:#F0F0F0;padding:2px 8px;border-radius:10px}
+.student-detail{display:none;padding:12px 16px;border-top:1px solid #E8E8E8}
+.student-detail.open{display:block}
+.issue-item{margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid #F5F5F5}
+.issue-item:last-child{margin-bottom:0;padding-bottom:0;border-bottom:none}
+.issue-problem{font-size:13px;color:#E64340;margin-bottom:4px;line-height:1.5}
+.issue-fix{font-size:13px;color:#07C160;line-height:1.5}
+.issue-label{font-weight:500;margin-right:4px}
+.results-card{display:none}
+.download-section{margin-top:16px}
+.error-msg{background:#FFF2F2;color:#E64340;padding:12px 16px;border-radius:8px;font-size:14px;margin-bottom:16px;display:none}
+.file-list{margin-top:12px;max-height:200px;overflow-y:auto}
+.file-item{display:flex;align-items:center;padding:6px 0;font-size:13px;color:#666;border-bottom:1px solid #F5F5F5}
+.file-item:last-child{border-bottom:none}
+.file-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.file-status{margin-left:8px;font-size:12px}
+.file-status.ok{color:#07C160}
+.file-status.fail{color:#E64340}
+.section{display:none}
+.section.visible{display:block}
+.empty-state{text-align:center;padding:40px 20px;color:#999}
+.empty-icon{font-size:64px;margin-bottom:16px;opacity:.5}
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:500}
+.badge-warning{background:#FFF3E0;color:#E65100}
+.badge-danger{background:#FFEBEE;color:#C62828}
+.badge-success{background:#E8F5E9;color:#2E7D32}
+.toggle-arrow{transition:transform .2s;color:#999;font-size:12px}
+.toggle-arrow.open{transform:rotate(90deg)}
+</style>
+</head>
+<body>
+<div class="navbar"><span class="navbar-title">管制员培训月报表审核系统</span></div>
+<div class="container">
+  <!-- Upload Section -->
+  <div id="sectionUpload" class="section visible">
+    <div class="card">
+      <div class="card-title">上传报表文件</div>
+      <div class="upload-zone" id="dropZone">
+        <div class="upload-icon">&#128196;</div>
+        <div class="upload-text">点击选择文件或拖拽到此处</div>
+        <div class="upload-hint">支持 RAR / ZIP 压缩包，或选择文件夹</div>
+        <input type="file" id="fileInput" accept=".rar,.zip" style="display:none">
+        <input type="file" id="folderInput" webkitdirectory style="display:none">
+      </div>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button class="btn btn-outline" style="flex:1" onclick="document.getElementById('fileInput').click()">选择压缩包</button>
+        <button class="btn btn-outline" style="flex:1" onclick="document.getElementById('folderInput').click()">选择文件夹</button>
+      </div>
+      <div class="file-list" id="fileList" style="display:none"></div>
+    </div>
+    <div id="errorMsg" class="error-msg"></div>
+    <button class="btn btn-primary" id="btnStart" disabled onclick="startAudit()">开始审核</button>
+  </div>
+
+  <!-- Progress Section -->
+  <div id="sectionProgress" class="section">
+    <div class="card progress-card" style="display:block">
+      <div class="card-title">审核进度</div>
+      <ul class="progress-steps">
+        <li class="progress-step" id="step1"><span class="step-icon">1</span>解压文件</li>
+        <li class="progress-step" id="step2"><span class="step-icon">2</span>解析文档</li>
+        <li class="progress-step" id="step3"><span class="step-icon">3</span>执行检查</li>
+        <li class="progress-step" id="step4"><span class="step-icon">4</span>生成报告</li>
+      </ul>
+      <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+    </div>
+  </div>
+
+  <!-- Results Section -->
+  <div id="sectionResults" class="section">
+    <div class="card">
+      <div class="card-title">审核概览</div>
+      <div class="stats-grid">
+        <div class="stat-item"><div class="stat-value" id="statDocs">0</div><div class="stat-label">解析文档</div></div>
+        <div class="stat-item"><div class="stat-value" id="statStudents">0</div><div class="stat-label">学员总数</div></div>
+        <div class="stat-item"><div class="stat-value" id="statIssues">0</div><div class="stat-label">发现问题</div></div>
+        <div class="stat-item"><div class="stat-value" id="statAffected">0</div><div class="stat-label">涉及学员</div></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">问题详情</div>
+      <div id="resultsList"></div>
+    </div>
+    <div class="card download-section">
+      <button class="btn btn-primary" onclick="downloadExcel()">下载检查结果 Excel</button>
+      <button class="btn btn-outline" style="margin-top:8px" onclick="resetApp()">重新审核</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// 全局状态
+// ============================================================
+let uploadedFiles = []; // [{name, data: ArrayBuffer}]
+let auditResults = null;
+
+// ============================================================
+// 审核配置
+// ============================================================
+const CORRECT_TRAINER = '刘兵';
+const CORRECT_DIRECTOR = '张文轩';
+const SIMILARITY_THRESHOLD = 0.75;
+const HORIZONTAL_THRESHOLD = 0.85;
+
+// ============================================================
+// Word XML 命名空间
+// ============================================================
+const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+
+// ============================================================
+// DOCX 解析器
+// ============================================================
+async function parseDocx(arrayBuffer) {
+  const zip = await JSZip.loadAsync(arrayBuffer);
+  const docXml = await zip.file('word/document.xml').async('text');
+  const parser = new DOMParser();
+  const xmlDoc = parser.parseFromString(docXml, 'application/xml');
+  const tables = xmlDoc.getElementsByTagNameNS(W_NS, 'tbl');
+  if (tables.length === 0) throw new Error('文档中没有找到表格');
+  return parseTable(tables[0]);
+}
+
+function parseTable(tbl) {
+  const rows = [];
+  const trs = tbl.getElementsByTagNameNS(W_NS, 'tr');
+  for (let i = 0; i < trs.length; i++) {
+    const tr = trs[i];
+    const tcs = tr.getElementsByTagNameNS(W_NS, 'tc');
+    const row = [];
+    for (let j = 0; j < tcs.length; j++) {
+      const tc = tcs[j];
+      const tcPr = tc.getElementsByTagNameNS(W_NS, 'tcPr')[0];
+      let vMergeVal = null;
+      if (tcPr) {
+        const vmEls = tcPr.getElementsByTagNameNS(W_NS, 'vMerge');
+        if (vmEls.length > 0) {
+          vMergeVal = vmEls[0].getAttributeNS(W_NS, 'val') || vmEls[0].getAttribute('w:val') || 'continue';
+        }
+      }
+      if (vMergeVal === 'continue') {
+        row.push('');
+      } else {
+        row.push(getCellText(tc));
+      }
+    }
+    rows.push(row);
+  }
+  return rows;
+}
+
+function getCellText(tc) {
+  const texts = [];
+  const ps = tc.getElementsByTagNameNS(W_NS, 'p');
+  for (let p = 0; p < ps.length; p++) {
+    const runs = ps[p].getElementsByTagNameNS(W_NS, 'r');
+    let pText = '';
+    for (let r = 0; r < runs.length; r++) {
+      const ts = runs[r].getElementsByTagNameNS(W_NS, 't');
+      for (let t = 0; t < ts.length; t++) {
+        pText += ts[t].textContent || '';
+      }
+    }
+    texts.push(pText);
+  }
+  return texts.join('\n').trim();
+}
+
+// ============================================================
+// 工具函数
+// ============================================================
+function findRowByContent(rows, pattern, start) {
+  start = start || 0;
+  const re = new RegExp(pattern);
+  for (let i = start; i < rows.length; i++) {
+    for (let j = 0; j < rows[i].length; j++) {
+      if (re.test(rows[i][j])) return i;
+    }
+  }
+  return -1;
+}
+
+function parseHours(text) {
+  const m = text.match(/(\d+\.?\d*)\s*小时/);
+  return m ? parseFloat(m[1]) : null;
+}
+
+function parseDateFromText(text) {
+  const m = text.match(/(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/);
+  if (m) return m[1] + '.' + m[2].padStart(2,'0') + '.' + m[3].padStart(2,'0');
+  return null;
+}
+
+function extractMonthFromDate(dateStr) {
+  if (!dateStr) return null;
+  const m = dateStr.match(/\.(\d{1,2})/);
+  return m ? parseInt(m[1]) : null;
+}
+
+function parseNameFromFilename(filename) {
+  const matches = filename.match(/[（(]([^）)]+)[）)]/g);
+  if (!matches) return null;
+  const last = matches[matches.length - 1];
+  return last.replace(/[（()）]/g, '').trim();
+}
+
+function parseMonthFromFilename(filename) {
+  const m = filename.match(/(\d{4})\s*年\s*(\d{1,2})\s*月/);
+  return m ? parseInt(m[2]) : null;
+}
+
+function calcSimilarity(s1, s2) {
+  if (!s1 || !s2) return 0;
+  if (s1 === s2) return 1;
+  // Use longest common subsequence ratio
+  const a = s1, b = s2;
+  const m = a.length, n = b.length;
+  if (m === 0 || n === 0) return 0;
+  // Optimization: use character-level comparison with windowing for long texts
+  if (m > 5000 || n > 5000) {
+    // For very long texts, use paragraph-level comparison
+    const paras1 = a.split(/\n/).filter(p => p.trim());
+    const paras2 = b.split(/\n/).filter(p => p.trim());
+    let matchLen = 0;
+    for (const p1 of paras1) {
+      for (const p2 of paras2) {
+        if (p1 === p2) { matchLen += p1.length; break; }
+      }
+    }
+    return (2 * matchLen) / (m + n);
+  }
+  // Standard LCS-based similarity
+  const dp = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      if (a[i-1] === b[j-1]) dp[i][j] = dp[i-1][j-1] + 1;
+      else dp[i][j] = Math.max(dp[i-1][j], dp[i][j-1]);
+    }
+  }
+  const lcsLen = dp[m][n];
+  return (2 * lcsLen) / (m + n);
+}
+
+// ============================================================
+// 解析单个文档
+// ============================================================
+function parseDocInfo(rows, filename) {
+  const nrows = rows.length;
+  const info = {
+    filename: filename,
+    student_name: parseNameFromFilename(filename),
+    file_month: parseMonthFromFilename(filename),
+  };
+
+  const rowEntry = findRowByContent(rows, '入职时间');
+  const rowStage = findRowByContent(rows, '本报告培训阶段');
+  const rowHoursCmd = findRowByContent(rows, '管制指挥岗');
+  const rowHoursAst = findRowByContent(rows, '助理管制岗');
+  const rowSummary = findRowByContent(rows, '见习管制员本月培训总结');
+  const rowCommentLabel = findRowByContent(rows, '^责任教员评语$');
+  const rowTrainerSig = findRowByContent(rows, '科室培训主管签名');
+  const rowDirectorSig = findRowByContent(rows, '科室主任签名');
+
+  // 入职时间 + 岗位见习开始时间（扫描整行去重）
+  if (rowEntry >= 0) {
+    const allDates = [];
+    const seen = new Set();
+    for (const cellText of rows[rowEntry]) {
+      const dates = cellText.match(/\d{4}\.\d{1,2}(?:\.\d{1,2})?/g) || [];
+      for (const d of dates) {
+        if (!seen.has(d)) { seen.add(d); allDates.push(d); }
+      }
+    }
+    info.entry_date = allDates.length > 0 ? allDates[0] : null;
+    info.internship_start = allDates.length > 1 ? allDates[allDates.length - 1] : null;
+  } else {
+    info.entry_date = null;
+    info.internship_start = null;
+  }
+
+  // 培训阶段
+  if (rowStage >= 0) {
+    let stageText = '';
+    for (const ct of rows[rowStage]) {
+      if (/\d{4}\s*年\s*\d{1,2}\s*月/.test(ct)) { stageText = ct; break; }
+    }
+    info.stage_text = stageText;
+    const m = stageText.match(/(\d{4})\s*年\s*(\d{1,2})\s*月/);
+    info.stage_month = m ? parseInt(m[2]) : null;
+  } else {
+    info.stage_text = '';
+    info.stage_month = null;
+  }
+
+  // 岗位实作时长
+  info.hours_command = null;
+  if (rowHoursCmd >= 0) {
+    for (const ct of rows[rowHoursCmd]) {
+      const h = parseHours(ct);
+      if (h !== null) { info.hours_command = h; break; }
+    }
+  }
+  info.hours_assistant = null;
+  if (rowHoursAst >= 0) {
+    for (const ct of rows[rowHoursAst]) {
+      const h = parseHours(ct);
+      if (h !== null) { info.hours_assistant = h; break; }
+    }
+  }
+
+  // 学员总结
+  if (rowSummary >= 0) {
+    const summaryText = rows[rowSummary][0] || '';
+    info.summary_full = summaryText;
+    info.summary_has_overview = /总体情况/.test(summaryText);
+    info.summary_has_detail = /具体情况/.test(summaryText);
+    info.summary_has_next = /下月重点/.test(summaryText);
+    let body = summaryText.replace(/见习管制员本月培训总结/, '').trim();
+    body = body.replace(/(总体情况|具体情况|下月重点)/g, '').trim();
+    info.summary_body = body;
+  } else {
+    info.summary_full = '';
+    info.summary_has_overview = false;
+    info.summary_has_detail = false;
+    info.summary_has_next = false;
+    info.summary_body = '';
+  }
+
+  // 教员评语
+  const commentRow = rowCommentLabel >= 0 ? rowCommentLabel + 1 : -1;
+  if (commentRow > 0 && commentRow < nrows) {
+    const commentText = rows[commentRow][0] || '';
+    info.comment_full = commentText;
+    info.comment_has_audit = /审核|真实|准确|完整/.test(commentText);
+    info.comment_has_improvement = /纠正|改进|完成|情况|评估/.test(commentText);
+    info.comment_has_direction = /关注|重点|方向|完善|后续/.test(commentText);
+    const mInst = commentText.match(/责任教员签名[：:]\s*(\S+)/);
+    info.instructor_name = mInst ? mInst[1] : null;
+    info.instructor_date = parseDateFromText(commentText);
+    info.comment_body = commentText.replace(/责任教员签名[\s\S]*/, '').trim();
+  } else {
+    info.comment_full = '';
+    info.comment_has_audit = false;
+    info.comment_has_improvement = false;
+    info.comment_has_direction = false;
+    info.instructor_name = null;
+    info.instructor_date = null;
+    info.comment_body = '';
+  }
+
+  // 科室培训主管签名
+  if (rowTrainerSig >= 0) {
+    const sig1 = rows[rowTrainerSig][0] || '';
+    const m1 = sig1.match(/科室培训主管签名[：:]\s*(\S+)/);
+    info.trainer_sig_name = m1 ? m1[1] : null;
+    info.trainer_sig_date = parseDateFromText(sig1);
+  } else {
+    info.trainer_sig_name = null;
+    info.trainer_sig_date = null;
+  }
+
+  // 科室主任签名
+  if (rowDirectorSig >= 0) {
+    const sig2 = rows[rowDirectorSig][0] || '';
+    const m2 = sig2.match(/科室主任签名[：:]\s*(\S+)/);
+    info.director_sig_name = m2 ? m2[1] : null;
+    info.director_sig_date = parseDateFromText(sig2);
+  } else {
+    info.director_sig_name = null;
+    info.director_sig_date = null;
+  }
+
+  return info;
+}
+
+// ============================================================
+// 执行所有检查
+// ============================================================
+function runChecks(allDocs) {
+  const issues = [];
+
+  // 按学员分组
+  const byStudent = {};
+  for (const doc of allDocs) {
+    const name = doc.student_name;
+    if (name) {
+      if (!byStudent[name]) byStudent[name] = [];
+      byStudent[name].push(doc);
+    }
+  }
+  for (const name in byStudent) {
+    byStudent[name].sort((a, b) => (a.file_month || 0) - (b.file_month || 0));
+  }
+
+  // 1. 纵向对比 - 同一学员跨月复制粘贴
+  for (const name in byStudent) {
+    const docs = byStudent[name];
+    if (docs.length < 2) continue;
+    for (let i = 0; i < docs.length - 1; i++) {
+      const d1 = docs[i], d2 = docs[i + 1];
+      const m1 = d1.file_month, m2 = d2.file_month;
+      const simS = calcSimilarity(d1.summary_body, d2.summary_body);
+      if (simS >= SIMILARITY_THRESHOLD) {
+        const pct = Math.round(simS * 100);
+        issues.push([name, m2 + '月',
+          '【' + m2 + '月】' + m2 + '月学员总结与' + m1 + '月高度雷同（相似度' + pct + '%），疑似复制粘贴',
+          '【' + m2 + '月】认真重新撰写，体现当月实际培训情况，严禁复制粘贴']);
+      }
+      const simC = calcSimilarity(d1.comment_body, d2.comment_body);
+      if (simC >= SIMILARITY_THRESHOLD) {
+        const pct = Math.round(simC * 100);
+        issues.push([name, m2 + '月',
+          '【' + m2 + '月】' + m2 + '月教员评语与' + m1 + '月高度雷同（相似度' + pct + '%），疑似复制粘贴',
+          '【' + m2 + '月】认真重新撰写，体现当月实际培训情况，严禁复制粘贴']);
+      }
+    }
+  }
+
+  // 2. 横向对比 - 不同学员间复制粘贴
+  const checkedPairs = new Set();
+  for (let i = 0; i < allDocs.length; i++) {
+    for (let j = i + 1; j < allDocs.length; j++) {
+      const d1 = allDocs[i], d2 = allDocs[j];
+      if (d1.student_name === d2.student_name) continue;
+      const pair = [d1.student_name, d2.student_name].sort().join('|');
+      if (checkedPairs.has(pair)) continue;
+      const simS = calcSimilarity(d1.summary_body, d2.summary_body);
+      if (simS >= HORIZONTAL_THRESHOLD) {
+        checkedPairs.add(pair);
+        const pct = Math.round(simS * 100);
+        issues.push([
+          d1.student_name + '与' + d2.student_name, d1.file_month + '月',
+          '【' + d1.file_month + '月】' + d1.student_name + '与' + d2.student_name + '学员总结高度雷同（相似度' + pct + '%），疑似互相复制',
+          '认真重新撰写，体现个人实际培训情况']);
+      }
+      const simC = calcSimilarity(d1.comment_body, d2.comment_body);
+      if (simC >= HORIZONTAL_THRESHOLD) {
+        checkedPairs.add(pair);
+        const pct = Math.round(simC * 100);
+        issues.push([
+          d1.student_name + '与' + d2.student_name, d1.file_month + '月',
+          '【' + d1.file_month + '月】' + d1.student_name + '与' + d2.student_name + '教员评语高度雷同（相似度' + pct + '%），疑似互相复制',
+          '认真重新撰写，体现个人实际培训情况']);
+      }
+    }
+  }
+
+  // 3. 学员总结结构检查
+  for (const doc of allDocs) {
+    const name = doc.student_name, m = doc.file_month;
+    if (!doc.summary_has_overview) issues.push([name, m + '月', '【' + m + '月】学员总结缺少"总体情况"部分', '【' + m + '月】请补齐相关内容']);
+    if (!doc.summary_has_detail) issues.push([name, m + '月', '【' + m + '月】学员总结缺少"具体情况"部分', '【' + m + '月】请补齐相关内容']);
+    if (!doc.summary_has_next) issues.push([name, m + '月', '【' + m + '月】学员总结缺少"下月重点"部分', '【' + m + '月】请补齐相关内容']);
+  }
+
+  // 4. 教员评语三方面检查
+  for (const doc of allDocs) {
+    const name = doc.student_name, m = doc.file_month;
+    if (!doc.comment_has_audit) issues.push([name, m + '月', '【' + m + '月】教员评语缺少"审核总结真实性、准确性、完整性"方面', '【' + m + '月】请补齐相关内容']);
+    if (!doc.comment_has_improvement) issues.push([name, m + '月', '【' + m + '月】教员评语缺少"上月纠正改进事项完成情况评估"方面', '【' + m + '月】请补齐相关内容']);
+    if (!doc.comment_has_direction) issues.push([name, m + '月', '【' + m + '月】教员评语缺少"后续培训重点关注方向"方面', '【' + m + '月】请补齐相关内容']);
+  }
+
+  // 5. 入职时间和见习开始时间一致性
+  for (const name in byStudent) {
+    const docs = byStudent[name];
+    const entryDates = new Set(), internshipDates = new Set();
+    for (const d of docs) {
+      if (d.entry_date) entryDates.add(d.entry_date);
+      if (d.internship_start) internshipDates.add(d.internship_start);
+    }
+    if (entryDates.size > 1) issues.push([name, '跨月', '入职时间在不同月份报表中不一致：' + [...entryDates].join(', '), '请核实并统一入职时间']);
+    if (internshipDates.size > 1) issues.push([name, '跨月', '岗位见习开始时间在不同月份报表中不一致：' + [...internshipDates].join(', '), '请核实并统一岗位见习开始时间']);
+    for (const d of docs) {
+      const m = d.file_month;
+      if (!d.entry_date) issues.push([name, m + '月', '【' + m + '月】缺少入职时间', '【' + m + '月】请补齐相关内容']);
+      if (!d.internship_start) issues.push([name, m + '月', '【' + m + '月】缺少岗位见习开始时间', '【' + m + '月】请补齐相关内容']);
+    }
+  }
+
+  // 6. 培训阶段与文件名月份一致性
+  for (const doc of allDocs) {
+    const name = doc.student_name, fm = doc.file_month, sm = doc.stage_month;
+    if (sm !== null && fm !== null && sm !== fm) {
+      issues.push([name, fm + '月', '【' + fm + '月】培训阶段日期（' + sm + '月）与报表月份（' + fm + '月）不一致', '【' + fm + '月】请核实并更正培训阶段日期']);
+    }
+  }
+
+  // 7. 岗位实作时长是否更新
+  for (const name in byStudent) {
+    const docs = byStudent[name];
+    if (docs.length < 2) continue;
+    for (let i = 0; i < docs.length - 1; i++) {
+      const d1 = docs[i], d2 = docs[i + 1];
+      const m2 = d2.file_month;
+      const h1c = d1.hours_command, h2c = d2.hours_command;
+      const h1a = d1.hours_assistant, h2a = d2.hours_assistant;
+      if (h1c !== null && h2c !== null && h1c === h2c && h1a !== null && h2a !== null && h1a === h2a) {
+        issues.push([name, m2 + '月',
+          '【' + m2 + '月】' + m2 + '月岗位实作时长与' + d1.file_month + '月完全相同（管制指挥岗' + h1c + '小时，助理管制岗' + h1a + '小时），未更新',
+          '【' + m2 + '月】核实并更新岗位实作时长数据']);
+      }
+    }
+  }
+
+  // 8. 签名日期与报表月份一致性（签名早于报表月份才算错误）
+  for (const doc of allDocs) {
+    const name = doc.student_name, fm = doc.file_month;
+    for (const [sigName, sigDate] of [['科室培训主管', doc.trainer_sig_date], ['科室主任', doc.director_sig_date]]) {
+      if (sigDate) {
+        const sigMonth = extractMonthFromDate(sigDate);
+        if (sigMonth !== null && fm !== null && sigMonth < fm) {
+          issues.push([name, fm + '月',
+            '【' + fm + '月】' + sigName + '签名日期（' + sigMonth + '月）早于报表月份（' + fm + '月），签名日期异常',
+            '【' + fm + '月】请核实并更正签名日期']);
+        }
+      }
+    }
+  }
+
+  // 9. 科室主任签名是否正确
+  for (const doc of allDocs) {
+    const name = doc.student_name, m = doc.file_month;
+    if (doc.director_sig_name && doc.director_sig_name !== CORRECT_DIRECTOR) {
+      issues.push([name, m + '月',
+        '【' + m + '月】科室主任签名为「' + doc.director_sig_name + '」，应为「' + CORRECT_DIRECTOR + '」',
+        '【' + m + '月】请核实并更正签名信息']);
+    }
+  }
+
+  // 10. 科室培训主管签名是否正确
+  for (const doc of allDocs) {
+    const name = doc.student_name, m = doc.file_month;
+    if (doc.trainer_sig_name && doc.trainer_sig_name !== CORRECT_TRAINER) {
+      issues.push([name, m + '月',
+        '【' + m + '月】科室培训主管签名为「' + doc.trainer_sig_name + '」，应为「' + CORRECT_TRAINER + '」',
+        '【' + m + '月】请核实并更正签名信息']);
+    }
+  }
+
+  return issues;
+}
+
+// ============================================================
+// 合并问题并生成结果
+// ============================================================
+function mergeIssues(issues) {
+  const studentIssues = {};
+  for (const [name, month, problem, fix] of issues) {
+    if (!studentIssues[name]) studentIssues[name] = { problems: [], fixes: [], months: new Set() };
+    studentIssues[name].problems.push(problem);
+    studentIssues[name].fixes.push(fix);
+    studentIssues[name].months.add(month);
+  }
+  const results = [];
+  for (const name of Object.keys(studentIssues).sort()) {
+    const info = studentIssues[name];
+    const monthsStr = [...info.months].sort().join('、');
+    results.push({
+      name: name + '（' + monthsStr + '）',
+      problems: info.problems.join('\n'),
+      fixes: info.fixes.join('\n'),
+    });
+  }
+  return results;
+}
+
+// ============================================================
+// 生成 Excel
+// ============================================================
+function generateExcel(results) {
+  const header = ['被查学员', '存在问题', '整改要求'];
+  const data = results.map(r => [r.name, r.problems, r.fixes]);
+  const wsData = [header, ...data];
+  const ws = XLSX.utils.aoa_to_sheet(wsData);
+  ws['!cols'] = [{ wch: 25 }, { wch: 70 }, { wch: 50 }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, '检查结果');
+  return XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+}
+
+// ============================================================
+// UI 交互
+// ============================================================
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+const folderInput = document.getElementById('folderInput');
+
+dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('dragover');
+  handleFiles(e.dataTransfer.files);
+});
+
+fileInput.addEventListener('change', e => handleFiles(e.target.files));
+folderInput.addEventListener('change', e => handleFiles(e.target.files));
+
+function handleFiles(fileList) {
+  const files = Array.from(fileList);
+  const docxFiles = files.filter(f => f.name.endsWith('.docx') && !f.name.startsWith('~$'));
+
+  if (docxFiles.length === 0) {
+    // Check if it's a RAR/ZIP
+    const archives = files.filter(f => f.name.endsWith('.rar') || f.name.endsWith('.zip'));
+    if (archives.length > 0) {
+      processArchive(archives[0]);
+      return;
+    }
+    showError('未找到docx文件，请选择包含docx文件的压缩包或文件夹');
+    return;
+  }
+
+  uploadedFiles = [];
+  const listEl = document.getElementById('fileList');
+  listEl.style.display = 'block';
+  listEl.innerHTML = '';
+
+  let loaded = 0;
+  for (const f of docxFiles) {
+    const reader = new FileReader();
+    reader.onload = e => {
+      uploadedFiles.push({ name: f.name, data: e.result });
+      loaded++;
+      const item = document.createElement('div');
+      item.className = 'file-item';
+      item.innerHTML = '<span class="file-name">' + f.name + '</span><span class="file-status ok">就绪</span>';
+      listEl.appendChild(item);
+      if (loaded === docxFiles.length) {
+        document.getElementById('btnStart').disabled = false;
+      }
+    };
+    reader.readAsArrayBuffer(f);
+  }
+}
+
+async function processArchive(file) {
+  setStep(1, 'active');
+  setProgress(10);
+  try {
+    const zip = await JSZip.loadAsync(file);
+    const docxFiles = [];
+    zip.forEach((path, entry) => {
+      if (!entry.dir && path.endsWith('.docx') && !path.split('/').pop().startsWith('~$')) {
+        docxFiles.push({ path, name: path.split('/').pop() });
+      }
+    });
+
+    if (docxFiles.length === 0) {
+      showError('压缩包中未找到docx文件');
+      setStep(1, 'done');
+      return;
+    }
+
+    uploadedFiles = [];
+    const listEl = document.getElementById('fileList');
+    listEl.style.display = 'block';
+    listEl.innerHTML = '';
+
+    for (let i = 0; i < docxFiles.length; i++) {
+      const df = docxFiles[i];
+      const data = await zip.file(df.path).async('arraybuffer');
+      uploadedFiles.push({ name: df.name, data });
+      const item = document.createElement('div');
+      item.className = 'file-item';
+      item.innerHTML = '<span class="file-name">' + df.name + '</span><span class="file-status ok">就绪</span>';
+      listEl.appendChild(item);
+      setProgress(10 + (i / docxFiles.length) * 15);
+    }
+
+    setStep(1, 'done');
+    setProgress(25);
+    document.getElementById('btnStart').disabled = false;
+  } catch (err) {
+    showError('解压失败：' + err.message);
+    setStep(1, 'done');
+  }
+}
+
+function showError(msg) {
+  const el = document.getElementById('errorMsg');
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+function showSection(id) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('visible'));
+  document.getElementById(id).classList.add('visible');
+}
+
+function setStep(n, state) {
+  const el = document.getElementById('step' + n);
+  el.className = 'progress-step ' + state;
+  if (state === 'done') el.querySelector('.step-icon').innerHTML = '&#10003;';
+}
+
+function setProgress(pct) {
+  document.getElementById('progressFill').style.width = pct + '%';
+}
+
+function resetSteps() {
+  for (let i = 1; i <= 4; i++) {
+    const el = document.getElementById('step' + i);
+    el.className = 'progress-step';
+    el.querySelector('.step-icon').textContent = i;
+  }
+  setProgress(0);
+}
+
+// ============================================================
+// 审核主流程
+// ============================================================
+async function startAudit() {
+  document.getElementById('btnStart').disabled = true;
+  document.getElementById('errorMsg').style.display = 'none';
+  showSection('sectionProgress');
+  resetSteps();
+
+  // Step 1: 解压 (already done if archive)
+  setStep(1, 'done');
+  setStep(2, 'active');
+  setProgress(30);
+
+  // Step 2: 解析文档
+  const allDocs = [];
+  const failed = [];
+  for (let i = 0; i < uploadedFiles.length; i++) {
+    const f = uploadedFiles[i];
+    try {
+      const rows = await parseDocx(f.data);
+      const info = parseDocInfo(rows, f.name);
+      allDocs.push(info);
+    } catch (err) {
+      failed.push({ name: f.name, error: err.message });
+    }
+    setProgress(30 + (i / uploadedFiles.length) * 30);
+  }
+  setStep(2, 'done');
+  setProgress(60);
+
+  // Step 3: 执行检查
+  setStep(3, 'active');
+  const issues = runChecks(allDocs);
+  const results = mergeIssues(issues);
+  setStep(3, 'done');
+  setProgress(80);
+
+  // Step 4: 生成报告
+  setStep(4, 'active');
+  const excelData = generateExcel(results);
+  auditResults = {
+    totalDocs: allDocs.length,
+    totalStudents: new Set(allDocs.map(d => d.student_name).filter(Boolean)).size,
+    totalIssues: issues.length,
+    studentsWithIssues: results.length,
+    results: results,
+    excelData: excelData,
+    failed: failed,
+  };
+  setStep(4, 'done');
+  setProgress(100);
+
+  // 显示结果
+  setTimeout(() => showResults(), 300);
+}
+
+function showResults() {
+  showSection('sectionResults');
+  document.getElementById('statDocs').textContent = auditResults.totalDocs;
+  document.getElementById('statStudents').textContent = auditResults.totalStudents;
+  document.getElementById('statIssues').textContent = auditResults.totalIssues;
+  document.getElementById('statAffected').textContent = auditResults.studentsWithIssues;
+
+  const listEl = document.getElementById('resultsList');
+  listEl.innerHTML = '';
+
+  if (auditResults.results.length === 0) {
+    listEl.innerHTML = '<div class="empty-state"><div class="empty-icon">&#127881;</div><p>未发现任何问题，所有报表审核通过</p></div>';
+    return;
+  }
+
+  for (let i = 0; i < auditResults.results.length; i++) {
+    const r = auditResults.results[i];
+    const problemLines = r.problems.split('\n');
+    const fixLines = r.fixes.split('\n');
+    const item = document.createElement('div');
+    item.className = 'student-item';
+
+    let detailHtml = '';
+    for (let j = 0; j < problemLines.length; j++) {
+      detailHtml += '<div class="issue-item">';
+      detailHtml += '<div class="issue-problem"><span class="issue-label">问题：</span>' + escapeHtml(problemLines[j]) + '</div>';
+      if (j < fixLines.length) {
+        detailHtml += '<div class="issue-fix"><span class="issue-label">整改：</span>' + escapeHtml(fixLines[j]) + '</div>';
+      }
+      detailHtml += '</div>';
+    }
+
+    item.innerHTML =
+      '<div class="student-header" onclick="toggleDetail(this)">' +
+        '<span class="student-name">' + escapeHtml(r.name) + '</span>' +
+        '<span><span class="student-count">' + problemLines.length + ' 个问题</span> <span class="toggle-arrow">&#9654;</span></span>' +
+      '</div>' +
+      '<div class="student-detail">' + detailHtml + '</div>';
+    listEl.appendChild(item);
+  }
+}
+
+function toggleDetail(header) {
+  const detail = header.nextElementSibling;
+  const arrow = header.querySelector('.toggle-arrow');
+  detail.classList.toggle('open');
+  arrow.classList.toggle('open');
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function downloadExcel() {
+  if (!auditResults || !auditResults.excelData) return;
+  const blob = new Blob([auditResults.excelData], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = '检查结果.xlsx';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function resetApp() {
+  uploadedFiles = [];
+  auditResults = null;
+  document.getElementById('fileList').style.display = 'none';
+  document.getElementById('fileList').innerHTML = '';
+  document.getElementById('btnStart').disabled = true;
+  document.getElementById('errorMsg').style.display = 'none';
+  fileInput.value = '';
+  folderInput.value = '';
+  showSection('sectionUpload');
+}
+</script>
+</body>
+</html>
