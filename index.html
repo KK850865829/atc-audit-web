@@ -883,20 +883,19 @@ function runQuarterlyChecks(allDocs) {
 
     const studentIssues = [];
 
-    // 1. 本次评估日期
+    // 1. 本次评估日期 — 允许季度最后一天前后10天
     const expected = quarterEndDate(year, quarter);
-    if (doc.this_date && doc.this_date !== expected) {
+    const tdNum = qDateNum(doc.this_date);
+    if (doc.this_date &&
+        (tdNum < qDateNum(qDateOffset(expected, -10)) || tdNum > qDateNum(qDateOffset(expected, 10)))) {
       studentIssues.push('本次评估日期错误');
     }
 
-    // 2. 上次评估日期 — 允许上季度第一天前后10天，或上季度末日期
+    // 2. 上次评估日期 — 允许上季度最后一天前后10天
     const expectedLast = prevQuarterEndDate(year, quarter);
-    const prevQStart = prevQuarterStartDate(year, quarter);
-    const prevQStartEarly = qDateOffset(prevQStart, -10);
-    const prevQStartLate = qDateOffset(prevQStart, 10);
     const ldNum = qDateNum(doc.last_date);
-    if (doc.last_date && doc.last_date !== expectedLast &&
-        (ldNum < qDateNum(prevQStartEarly) || ldNum > qDateNum(prevQStartLate))) {
+    if (doc.last_date &&
+        (ldNum < qDateNum(qDateOffset(expectedLast, -10)) || ldNum > qDateNum(qDateOffset(expectedLast, 10)))) {
       studentIssues.push('上次评估日期错误');
     }
 
