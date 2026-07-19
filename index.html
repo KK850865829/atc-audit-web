@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
-<title>管制员培训月报表审核系统</title>
+<title>管制员培训报表审核系统</title>
 <script src="./jszip.min.js"></script>
 <script src="./xlsx.full.min.js"></script>
 <style>
@@ -76,7 +76,7 @@ html,body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft 
 </style>
 </head>
 <body>
-<div class="navbar"><span class="navbar-title">管制员培训月报表审核系统</span></div>
+<div class="navbar"><span class="navbar-title">管制员培训报表审核系统</span></div>
 <div class="container">
   <!-- Upload Section -->
   <div id="sectionUpload" class="section visible">
@@ -85,7 +85,7 @@ html,body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft 
       <div class="upload-zone" id="dropZone">
         <div class="upload-icon">&#128196;</div>
         <div class="upload-text">点击选择文件或拖拽到此处</div>
-        <div class="upload-hint">支持 RAR / ZIP 压缩包（浏览器直接解压），或选择文件夹</div>
+        <div class="upload-hint">月报表(docx)或季度报表(xlsx)的压缩包，支持RAR/ZIP</div>
         <input type="file" id="fileInput" accept=".rar,.zip" style="display:none">
         <input type="file" id="folderInput" webkitdirectory style="display:none">
       </div>
@@ -141,6 +141,8 @@ html,body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft 
 // ============================================================
 let uploadedFiles = []; // [{name, data: ArrayBuffer}]
 let auditResults = null;
+let auditMode = null; // 'monthly' or 'quarterly'
+let prevQuarterFiles = []; // [{name, data: ArrayBuffer}] for previous quarter xlsx
 
 // ============================================================
 // 审核配置
@@ -627,6 +629,382 @@ function generateExcel(results) {
 }
 
 // ============================================================
+// 季度报表审核
+// ============================================================
+const QUARTER_END = {1:[3,31], 2:[6,30], 3:[9,30], 4:[12,31]};
+
+function quarterEndDate(year, quarter) {
+  const [m, d] = QUARTER_END[quarter];
+  return year + '/' + m + '/' + d;
+}
+
+function prevQuarterEndDate(year, quarter) {
+  if (quarter === 1) return (year - 1) + '/12/31';
+  const [m, d] = QUARTER_END[quarter - 1];
+  return year + '/' + m + '/' + d;
+}
+
+function parseQuarterFromFilename(filename) {
+  const m = filename.match(/(\d{4})\s*年\s*第?\s*([一二三四1-4])\s*季度/);
+  if (!m) return { year: null, quarter: null };
+  const qmap = {'一':1,'二':2,'三':3,'四':4,'1':1,'2':2,'3':3,'4':4};
+  return { year: parseInt(m[1]), quarter: qmap[m[2]] || parseInt(m[2]) };
+}
+
+function qFindRow(rows, pattern, col, start) {
+  start = start || 0;
+  const re = new RegExp(pattern);
+  for (let i = start; i < rows.length; i++) {
+    for (let j = 0; j < rows[i].length; j++) {
+      if (col !== undefined && col !== null && j !== col) continue;
+      if (rows[i][j] !== null && rows[i][j] !== undefined && re.test(String(rows[i][j]))) return i;
+    }
+  }
+  return -1;
+}
+
+function qNormalizeDate(val) {
+  if (val === null || val === undefined) return null;
+  // JS Date object (from cellDates:true)
+  if (val instanceof Date) {
+    return val.getFullYear() + '/' + (val.getMonth() + 1) + '/' + val.getDate();
+  }
+  if (typeof val === 'number') {
+    // Excel serial date
+    const d = XLSX.SSF.parse_date_code(val);
+    if (d) return d.y + '/' + d.m + '/' + d.d;
+    return null;
+  }
+  const s = String(val).trim();
+  if (!s) return null;
+  const m = s.match(/(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+  if (m) return m[1] + '/' + parseInt(m[2]) + '/' + parseInt(m[3]);
+  // Try Excel serial from string
+  const num = parseFloat(s);
+  if (!isNaN(num) && num > 20000 && num < 60000) {
+    const d = XLSX.SSF.parse_date_code(num);
+    if (d) return d.y + '/' + d.m + '/' + d.d;
+  }
+  return s;
+}
+
+function qExtractTextSection(rows, headerPattern, skipPatterns) {
+  const r = qFindRow(rows, headerPattern);
+  if (r < 0) return '';
+  const texts = [];
+  for (let i = r + 2; i < Math.min(r + 12, rows.length); i++) {
+    const row = rows[i];
+    if (row && row[0]) {
+      const cs = String(row[0]);
+      let skip = false;
+      if (skipPatterns) {
+        for (const sp of skipPatterns) {
+          if (new RegExp(sp).test(cs)) { skip = true; break; }
+        }
+      }
+      if (skip) break;
+      texts.push(cs);
+    }
+    if (row && row[2]) texts.push(String(row[2]));
+    if (row && row.length > 6 && row[6]) texts.push(String(row[6]));
+  }
+  return texts.join(' ');
+}
+
+function qExtractTextAfter(rows, headerPattern, skipPatterns) {
+  const r = qFindRow(rows, headerPattern);
+  if (r < 0) return '';
+  const texts = [];
+  for (let i = r + 1; i < Math.min(r + 5, rows.length); i++) {
+    const cell = rows[i] && rows[i].length > 0 ? rows[i][0] : null;
+    if (cell === null || cell === undefined) continue;
+    const cs = String(cell);
+    let skip = false;
+    if (skipPatterns) {
+      for (const sp of skipPatterns) {
+        if (new RegExp(sp).test(cs)) { skip = true; break; }
+      }
+    }
+    if (skip) break;
+    texts.push(cs);
+  }
+  return texts.join(' ');
+}
+
+function parseQuarterlyExcel(arrayBuffer, filename) {
+  const wb = XLSX.read(arrayBuffer, { type: 'array', cellDates: true });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: true });
+
+  const nameMatch = filename.match(/[（(]([^）)]+)[）)]/);
+  const name = nameMatch ? nameMatch[1].trim() : null;
+  const qInfo = parseQuarterFromFilename(filename);
+
+  const info = {
+    filename: filename,
+    student_name: name,
+    year: qInfo.year,
+    quarter: qInfo.quarter,
+  };
+
+  // Row 1: dates (本次评估日期 at col C, 上次评估日期 at col G)
+  const r1 = rows[1] || [];
+  info.this_date = qNormalizeDate(r1[2] !== undefined ? r1[2] : null);
+  info.last_date = qNormalizeDate(r1[6] !== undefined ? r1[6] : null);
+
+  // Row 3: qualification (已获得岗位资格 at col C)
+  const r3 = rows[3] || [];
+  info.qualification = (r3[2] !== null && r3[2] !== undefined) ? String(r3[2]).trim() : '';
+
+  // Row 4: instructor (评估教员 at col C)
+  const r4 = rows[4] || [];
+  info.instructor = (r4[2] !== null && r4[2] !== undefined) ? String(r4[2]).trim() : '';
+
+  // Positions (after 岗位名称 header)
+  const rHdr = qFindRow(rows, '岗位名称', 0);
+  const positions = [];
+  if (rHdr >= 0) {
+    for (let i = rHdr + 1; i < Math.min(rHdr + 6, rows.length); i++) {
+      const cell = rows[i] && rows[i].length > 0 ? rows[i][0] : null;
+      if (cell === null || cell === undefined) continue;
+      const cs = String(cell).trim();
+      if (!cs || /^\d+\./.test(cs)) break;
+      positions.push(cs);
+    }
+  }
+  info.positions = positions;
+
+  // 责任教员评价 - check if scores exist
+  const rEval = qFindRow(rows, '责任教员评价');
+  let scoreCount = 0;
+  if (rEval >= 0) {
+    for (let i = rEval + 1; i < Math.min(rEval + 30, rows.length); i++) {
+      const r = rows[i];
+      if (!r) continue;
+      for (let j = 5; j < Math.min(9, r.length); j++) {
+        if (r[j] !== null && r[j] !== undefined) {
+          const v = parseFloat(String(r[j]));
+          if ([3, 5, 7, 9].indexOf(v) >= 0) scoreCount++;
+        }
+      }
+    }
+  }
+  info.eval_filled = scoreCount > 0;
+
+  // 4 text fields for copy-paste detection
+  info.text_case = qExtractTextSection(rows, '复盘典型案例.*责任教员', ['关键事件', '工作表现', '^\\d+\\.']);
+  info.text_event = qExtractTextSection(rows, '关键事件记录', ['工作表现', '^\\d+\\.']);
+  info.text_perf = qExtractTextAfter(rows, '工作表现概述', ['^\\d+\\.']);
+  info.text_suggest = qExtractTextAfter(rows, '下阶段培训工作改进建议', ['^\\d+\\.']);
+
+  // 培训主管签名
+  const rSig = qFindRow(rows, '部门培训主管意见');
+  info.trainer_sig = null;
+  if (rSig >= 0) {
+    for (let i = rSig; i < Math.min(rSig + 5, rows.length); i++) {
+      const r = rows[i];
+      if (r && r[0] && String(r[0]).includes('签名')) {
+        for (let j = r.length - 1; j > 0; j--) {
+          if (r[j] && String(r[j]).trim() && !String(r[j]).includes('签名')) {
+            info.trainer_sig = String(r[j]).trim();
+            break;
+          }
+        }
+        break;
+      }
+    }
+  }
+
+  // 序号: 总第X份 (col D=3), 本年度第X份 (col H=7)
+  const rSeq = qFindRow(rows, '序号');
+  info.total_seq = null;
+  info.year_seq = null;
+  if (rSeq >= 0) {
+    const r = rows[rSeq];
+    if (r && r.length > 3 && r[3] !== null && r[3] !== undefined) {
+      const v = parseInt(String(r[3]).trim());
+      if (!isNaN(v)) info.total_seq = v;
+    }
+    if (r && r.length > 7 && r[7] !== null && r[7] !== undefined) {
+      const v = parseInt(String(r[7]).trim());
+      if (!isNaN(v)) info.year_seq = v;
+    }
+  }
+
+  // 编号
+  const rId = qFindRow(rows, '编号');
+  info.doc_id = null;
+  if (rId >= 0) {
+    const r = rows[rId];
+    if (r && r.length > 2 && r[2]) info.doc_id = String(r[2]).trim();
+  }
+
+  return info;
+}
+
+function runQuarterlyChecks(allDocs) {
+  const issues = [];
+  const currentDocs = allDocs.filter(d => d._is_current);
+  const prevDocs = allDocs.filter(d => !d._is_current);
+  const prevByName = {};
+  for (const d of prevDocs) {
+    if (d.student_name) prevByName[d.student_name] = d;
+  }
+
+  for (const doc of currentDocs) {
+    const name = doc.student_name;
+    const instr = doc.instructor || '';
+    const year = doc.year;
+    const quarter = doc.quarter;
+    if (!year || !quarter || !name) continue;
+
+    const studentIssues = [];
+
+    // 1. 本次评估日期
+    const expected = quarterEndDate(year, quarter);
+    if (doc.this_date && doc.this_date !== expected) {
+      studentIssues.push('本次评估日期错误');
+    }
+
+    // 2. 上次评估日期
+    const expectedLast = prevQuarterEndDate(year, quarter);
+    if (doc.last_date && doc.last_date !== expectedLast) {
+      studentIssues.push('上次评估日期错误');
+    }
+
+    // 3. 已获得岗位资格
+    const qual = doc.qualification || '';
+    if (!qual || qual === '无' || qual === '无 ') {
+      studentIssues.push('放单扇区未填');
+    }
+
+    // 4. 责任教员评价
+    if (!doc.eval_filled) {
+      studentIssues.push('责任教员评价未填');
+    }
+
+    // 5. 培训主管签名
+    if (doc.trainer_sig && doc.trainer_sig !== CORRECT_TRAINER) {
+      studentIssues.push('培训主管填错');
+    }
+
+    // 6. 总第X份
+    const prev = prevByName[name];
+    if (prev && prev.total_seq !== null && doc.total_seq !== null) {
+      const expectedTotal = prev.total_seq + 1;
+      if (doc.total_seq !== expectedTotal) {
+        studentIssues.push('总第' + expectedTotal + '份错填成第' + doc.total_seq + '份');
+      }
+    }
+
+    // 7. 本年度第X份
+    if (doc.year_seq !== null && quarter) {
+      if (doc.year_seq !== quarter) {
+        studentIssues.push('本年度第' + doc.year_seq + '份错填成第' + quarter + '份');
+      }
+    }
+
+    if (studentIssues.length > 0) {
+      issues.push({ name: name, instructor: instr, issues: studentIssues, doc: doc });
+    }
+  }
+
+  // 8. Cross-quarter copy-paste (same student)
+  const byStudent = {};
+  for (const d of allDocs) {
+    if (d.student_name) {
+      if (!byStudent[d.student_name]) byStudent[d.student_name] = [];
+      byStudent[d.student_name].push(d);
+    }
+  }
+
+  for (const name in byStudent) {
+    const docsList = byStudent[name];
+    const curr = docsList.filter(d => d._is_current);
+    const prev = docsList.filter(d => !d._is_current);
+    if (!curr.length || !prev.length) continue;
+    for (const cd of curr) {
+      for (const pd of prev) {
+        const fields = [
+          ['text_case', '复盘典型案例'],
+          ['text_event', '关键事件记录'],
+          ['text_perf', '工作表现概述'],
+          ['text_suggest', '下阶段培训工作改进建议']
+        ];
+        for (const [fk, fn] of fields) {
+          const sim = calcSimilarity(cd[fk] || '', pd[fk] || '');
+          if (sim >= SIMILARITY_THRESHOLD && (cd[fk] || '').trim()) {
+            const msg = fn + '与上季度内容高度相似（相似度' + Math.round(sim * 100) + '%），疑似复制粘贴';
+            const existing = issues.find(x => x.name === name);
+            if (existing) {
+              if (!existing.issues.includes(msg)) existing.issues.push(msg);
+            } else {
+              issues.push({ name: name, instructor: cd.instructor || '', issues: [msg], doc: cd });
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // 9. Cross-student copy-paste (same quarter)
+  for (let i = 0; i < currentDocs.length; i++) {
+    for (let j = i + 1; j < currentDocs.length; j++) {
+      const d1 = currentDocs[i], d2 = currentDocs[j];
+      if (d1.student_name === d2.student_name) continue;
+      const fields = [
+        ['text_case', '复盘典型案例'],
+        ['text_event', '关键事件记录'],
+        ['text_perf', '工作表现概述'],
+        ['text_suggest', '下阶段培训工作改进建议']
+      ];
+      for (const [fk, fn] of fields) {
+        const sim = calcSimilarity(d1[fk] || '', d2[fk] || '');
+        if (sim >= SIMILARITY_THRESHOLD && (d1[fk] || '').trim() && (d2[fk] || '').trim()) {
+          const msg1 = fn + '与' + d2.student_name + '内容高度相似（相似度' + Math.round(sim * 100) + '%），疑似复制粘贴';
+          const msg2 = fn + '与' + d1.student_name + '内容高度相似（相似度' + Math.round(sim * 100) + '%），疑似复制粘贴';
+          for (const [d, msg] of [[d1, msg1], [d2, msg2]]) {
+            const ex = issues.find(x => x.name === d.student_name);
+            if (ex) {
+              if (!ex.issues.includes(msg)) ex.issues.push(msg);
+            } else {
+              issues.push({ name: d.student_name, instructor: d.instructor || '', issues: [msg], doc: d });
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Sort by name
+  issues.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'zh'));
+  return issues;
+}
+
+function generateQuarterlyExcel(issues) {
+  const header = ['被查学员', '责任教员及见习模块', '存在问题', '整改要求'];
+  const data = issues.map(item => [
+    item.name,
+    item.instructor,
+    item.issues.map((x, i) => (i + 1) + '、' + x).join('\n'),
+    '按照表格要求修改'
+  ]);
+  const wsData = [header, ...data];
+
+  // Footer rows
+  const sr = data.length + 2;
+  wsData.push([]); // empty row
+  wsData.push(['检查人', '', '', '']);
+  wsData.push(['检查时间（段）', '', '', '']);
+
+  const ws = XLSX.utils.aoa_to_sheet(wsData);
+  ws['!cols'] = [{ wch: 12 }, { wch: 20 }, { wch: 60 }, { wch: 18 }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, '审核结果');
+  return XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+}
+
+// ============================================================
 // UI 交互
 // ============================================================
 const dropZone = document.getElementById('dropZone');
@@ -648,6 +1026,46 @@ folderInput.addEventListener('change', e => handleFiles(e.target.files));
 function handleFiles(fileList) {
   const files = Array.from(fileList);
   const docxFiles = files.filter(f => f.name.endsWith('.docx') && !f.name.startsWith('~$'));
+  const xlsxFiles = files.filter(f => f.name.endsWith('.xlsx') && !f.name.startsWith('~$'));
+
+  // Direct xlsx files → quarterly mode
+  if (xlsxFiles.length > 0 && docxFiles.length === 0) {
+    auditMode = 'quarterly';
+    // Split into current and previous quarter by filename
+    const parsed = xlsxFiles.map(f => ({ file: f, q: parseQuarterFromFilename(f.name) }));
+    const quarters = [...new Set(parsed.filter(p => p.q.quarter).map(p => p.q.year * 10 + p.q.quarter))].sort((a, b) => b - a);
+    const currentQ = quarters[0];
+    const curr = parsed.filter(p => p.q.year * 10 + p.q.quarter === currentQ);
+    const prev = parsed.filter(p => p.q.year * 10 + p.q.quarter !== currentQ);
+
+    uploadedFiles = [];
+    prevQuarterFiles = [];
+    const listEl = document.getElementById('fileList');
+    listEl.style.display = 'block';
+    listEl.innerHTML = '';
+    let loaded = 0;
+    const total = xlsxFiles.length;
+    for (const p of parsed) {
+      const reader = new FileReader();
+      reader.onload = e => {
+        const entry = { name: p.file.name, data: e.result };
+        const isCurr = p.q.year * 10 + p.q.quarter === currentQ;
+        if (isCurr) uploadedFiles.push(entry);
+        else prevQuarterFiles.push(entry);
+        loaded++;
+        const item = document.createElement('div');
+        item.className = 'file-item';
+        const qLabel = isCurr ? '当前季度' : '上季度';
+        item.innerHTML = '<span class="file-name">' + p.file.name + '</span><span class="file-status ok">' + qLabel + '</span>';
+        listEl.appendChild(item);
+        if (loaded === total) {
+          document.getElementById('btnStart').disabled = false;
+        }
+      };
+      reader.readAsArrayBuffer(p.file);
+    }
+    return;
+  }
 
   if (docxFiles.length === 0) {
     // Check if it's a RAR/ZIP
@@ -656,10 +1074,12 @@ function handleFiles(fileList) {
       processArchive(archives[0]);
       return;
     }
-    showError('未找到docx文件，请选择包含docx文件的压缩包或文件夹');
+    showError('未找到docx或xlsx文件，请选择包含报表的压缩包或文件夹');
     return;
   }
 
+  // docx files → monthly mode
+  auditMode = 'monthly';
   uploadedFiles = [];
   const listEl = document.getElementById('fileList');
   listEl.style.display = 'block';
@@ -704,25 +1124,65 @@ async function processArchive(file) {
 
 async function processZipArchive(file) {
   const zip = await JSZip.loadAsync(file);
-  const docxFiles = [];
+  const docxFiles = [], xlsxFiles = [];
   zip.forEach((path, entry) => {
-    if (!entry.dir && path.endsWith('.docx') && !path.split('/').pop().startsWith('~$')) {
-      docxFiles.push({ path, name: path.split('/').pop() });
-    }
+    if (entry.dir) return;
+    const fname = path.split('/').pop();
+    if (fname.startsWith('~$')) return;
+    if (fname.endsWith('.docx')) docxFiles.push({ path, name: fname });
+    else if (fname.endsWith('.xlsx')) xlsxFiles.push({ path, name: fname });
   });
-  if (docxFiles.length === 0) { showError('压缩包中未找到docx文件'); setStep(1, 'done'); return; }
+
+  // Determine mode
+  if (xlsxFiles.length > 0 && docxFiles.length === 0) {
+    auditMode = 'quarterly';
+  } else {
+    auditMode = 'monthly';
+  }
+
+  if (auditMode === 'monthly' && docxFiles.length === 0) {
+    showError('压缩包中未找到docx文件'); setStep(1, 'done'); return;
+  }
+  if (auditMode === 'quarterly' && xlsxFiles.length === 0) {
+    showError('压缩包中未找到xlsx文件'); setStep(1, 'done'); return;
+  }
+
+  const targetFiles = auditMode === 'quarterly' ? xlsxFiles : docxFiles;
+
+  // For quarterly: split into current and previous quarter
+  let currentQ = null;
+  if (auditMode === 'quarterly') {
+    const quarters = [...new Set(xlsxFiles.map(f => {
+      const q = parseQuarterFromFilename(f.name);
+      return q.year * 10 + q.quarter;
+    }).filter(v => v > 0))].sort((a, b) => b - a);
+    currentQ = quarters[0] || null;
+  }
+
   uploadedFiles = [];
+  prevQuarterFiles = [];
   const listEl = document.getElementById('fileList');
   listEl.style.display = 'block'; listEl.innerHTML = '';
-  for (let i = 0; i < docxFiles.length; i++) {
-    const df = docxFiles[i];
+  for (let i = 0; i < targetFiles.length; i++) {
+    const df = targetFiles[i];
     const data = await zip.file(df.path).async('arraybuffer');
-    uploadedFiles.push({ name: df.name, data });
+    const entry = { name: df.name, data };
+
+    let label = '就绪';
+    if (auditMode === 'quarterly') {
+      const q = parseQuarterFromFilename(df.name);
+      const qVal = q.year * 10 + q.quarter;
+      if (qVal === currentQ) { uploadedFiles.push(entry); label = '当前季度'; }
+      else { prevQuarterFiles.push(entry); label = '上季度'; }
+    } else {
+      uploadedFiles.push(entry);
+    }
+
     const item = document.createElement('div');
     item.className = 'file-item';
-    item.innerHTML = '<span class="file-name">' + df.name + '</span><span class="file-status ok">就绪</span>';
+    item.innerHTML = '<span class="file-name">' + df.name + '</span><span class="file-status ok">' + label + '</span>';
     listEl.appendChild(item);
-    setProgress(10 + (i / docxFiles.length) * 15);
+    setProgress(10 + (i / targetFiles.length) * 15);
   }
   setStep(1, 'done'); setProgress(25);
   document.getElementById('btnStart').disabled = false;
@@ -736,14 +1196,15 @@ async function processRarArchive(file) {
   const archiveInstance = await Archive.open(file);
   const filesObj = await archiveInstance.extractFiles();
 
-  // Recursively collect .docx files from extracted tree
-  const docxFiles = [];
+  // Recursively collect .docx and .xlsx files from extracted tree
+  const docxFiles = [], xlsxFiles = [];
   function collect(obj, prefix) {
     for (const name of Object.keys(obj)) {
       if (name.startsWith('~$')) continue;
       const item = obj[name];
       if (item instanceof File) {
         if (name.endsWith('.docx')) docxFiles.push({ file: item, name: name });
+        else if (name.endsWith('.xlsx')) xlsxFiles.push({ file: item, name: name });
       } else if (typeof item === 'object' && item !== null) {
         collect(item, prefix + name + '/');
       }
@@ -751,20 +1212,53 @@ async function processRarArchive(file) {
   }
   collect(filesObj, '');
 
-  if (docxFiles.length === 0) { showError('压缩包中未找到docx文件'); setStep(1, 'done'); return; }
+  // Determine mode
+  if (xlsxFiles.length > 0 && docxFiles.length === 0) {
+    auditMode = 'quarterly';
+  } else {
+    auditMode = 'monthly';
+  }
+
+  const targetFiles = auditMode === 'quarterly' ? xlsxFiles : docxFiles;
+  if (targetFiles.length === 0) {
+    showError('压缩包中未找到' + (auditMode === 'quarterly' ? 'xlsx' : 'docx') + '文件');
+    setStep(1, 'done'); return;
+  }
+
+  // For quarterly: split into current and previous quarter
+  let currentQ = null;
+  if (auditMode === 'quarterly') {
+    const quarters = [...new Set(xlsxFiles.map(f => {
+      const q = parseQuarterFromFilename(f.name);
+      return q.year * 10 + q.quarter;
+    }).filter(v => v > 0))].sort((a, b) => b - a);
+    currentQ = quarters[0] || null;
+  }
 
   uploadedFiles = [];
+  prevQuarterFiles = [];
   const listEl = document.getElementById('fileList');
   listEl.style.display = 'block'; listEl.innerHTML = '';
-  for (let i = 0; i < docxFiles.length; i++) {
-    const df = docxFiles[i];
+  for (let i = 0; i < targetFiles.length; i++) {
+    const df = targetFiles[i];
     const data = await df.file.arrayBuffer();
-    uploadedFiles.push({ name: df.name, data });
+    const entry = { name: df.name, data };
+
+    let label = '就绪';
+    if (auditMode === 'quarterly') {
+      const q = parseQuarterFromFilename(df.name);
+      const qVal = q.year * 10 + q.quarter;
+      if (qVal === currentQ) { uploadedFiles.push(entry); label = '当前季度'; }
+      else { prevQuarterFiles.push(entry); label = '上季度'; }
+    } else {
+      uploadedFiles.push(entry);
+    }
+
     const item = document.createElement('div');
     item.className = 'file-item';
-    item.innerHTML = '<span class="file-name">' + df.name + '</span><span class="file-status ok">就绪</span>';
+    item.innerHTML = '<span class="file-name">' + df.name + '</span><span class="file-status ok">' + label + '</span>';
     listEl.appendChild(item);
-    setProgress(10 + (i / docxFiles.length) * 15);
+    setProgress(10 + (i / targetFiles.length) * 15);
   }
   setStep(1, 'done'); setProgress(25);
   document.getElementById('btnStart').disabled = false;
@@ -809,6 +1303,14 @@ async function startAudit() {
   showSection('sectionProgress');
   resetSteps();
 
+  if (auditMode === 'quarterly') {
+    await startQuarterlyAudit();
+  } else {
+    await startMonthlyAudit();
+  }
+}
+
+async function startMonthlyAudit() {
   // Step 1: 解压 (already done if archive)
   setStep(1, 'done');
   setStep(2, 'active');
@@ -857,6 +1359,73 @@ async function startAudit() {
   setTimeout(() => showResults(), 300);
 }
 
+async function startQuarterlyAudit() {
+  // Step 1: 解压 (already done)
+  setStep(1, 'done');
+  setStep(2, 'active');
+  setProgress(30);
+
+  // Step 2: 解析Excel
+  const allDocs = [];
+  const failed = [];
+
+  // Parse previous quarter files
+  for (let i = 0; i < prevQuarterFiles.length; i++) {
+    const f = prevQuarterFiles[i];
+    try {
+      const info = parseQuarterlyExcel(f.data, f.name);
+      if (info) { info._is_current = false; allDocs.push(info); }
+    } catch (err) {
+      failed.push({ name: f.name, error: err.message });
+    }
+    setProgress(30 + (i / (uploadedFiles.length + prevQuarterFiles.length)) * 15);
+  }
+
+  // Parse current quarter files
+  for (let i = 0; i < uploadedFiles.length; i++) {
+    const f = uploadedFiles[i];
+    try {
+      const info = parseQuarterlyExcel(f.data, f.name);
+      if (info) { info._is_current = true; allDocs.push(info); }
+    } catch (err) {
+      failed.push({ name: f.name, error: err.message });
+    }
+    setProgress(45 + (i / uploadedFiles.length) * 15);
+  }
+  setStep(2, 'done');
+  setProgress(60);
+
+  // Step 3: 执行检查
+  setStep(3, 'active');
+  const issues = runQuarterlyChecks(allDocs);
+  setStep(3, 'done');
+  setProgress(80);
+
+  // Step 4: 生成报告
+  setStep(4, 'active');
+  const excelData = generateQuarterlyExcel(issues);
+  const currentDocs = allDocs.filter(d => d._is_current);
+  auditResults = {
+    totalDocs: currentDocs.length,
+    totalStudents: new Set(currentDocs.map(d => d.student_name).filter(Boolean)).size,
+    totalIssues: issues.length,
+    studentsWithIssues: issues.length,
+    results: issues.map(item => ({
+      name: item.name,
+      problems: item.issues.join('\n'),
+      fixes: '按照表格要求修改',
+      instructor: item.instructor,
+    })),
+    excelData: excelData,
+    failed: failed,
+    isQuarterly: true,
+  };
+  setStep(4, 'done');
+  setProgress(100);
+
+  setTimeout(() => showResults(), 300);
+}
+
 function showResults() {
   showSection('sectionResults');
   document.getElementById('statDocs').textContent = auditResults.totalDocs;
@@ -889,9 +1458,13 @@ function showResults() {
       detailHtml += '</div>';
     }
 
+    const displayName = r.instructor
+      ? escapeHtml(r.name) + ' <span style="color:#999;font-size:12px;font-weight:normal">| ' + escapeHtml(r.instructor) + '</span>'
+      : escapeHtml(r.name);
+
     item.innerHTML =
       '<div class="student-header" onclick="toggleDetail(this)">' +
-        '<span class="student-name">' + escapeHtml(r.name) + '</span>' +
+        '<span class="student-name">' + displayName + '</span>' +
         '<span><span class="student-count">' + problemLines.length + ' 个问题</span> <span class="toggle-arrow">&#9654;</span></span>' +
       '</div>' +
       '<div class="student-detail">' + detailHtml + '</div>';
@@ -928,6 +1501,8 @@ function downloadExcel() {
 function resetApp() {
   uploadedFiles = [];
   auditResults = null;
+  auditMode = null;
+  prevQuarterFiles = [];
   document.getElementById('fileList').style.display = 'none';
   document.getElementById('fileList').innerHTML = '';
   document.getElementById('btnStart').disabled = true;
