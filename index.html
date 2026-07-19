@@ -644,11 +644,13 @@ function prevQuarterEndDate(year, quarter) {
   return year + '/' + m + '/' + d;
 }
 
-function parseQuarterFromFilename(filename) {
-  const m = filename.match(/(\d{4})\s*年\s*第?\s*([一二三四1-4])\s*季度/);
+function parseQuarterFromFilename(path) {
+  const m = path.match(/(\d{2,4})\s*年+?\s*第?\s*([一二三四1-4])\s*季度/);
   if (!m) return { year: null, quarter: null };
+  let year = parseInt(m[1]);
+  if (year < 100) year += 2000;
   const qmap = {'一':1,'二':2,'三':3,'四':4,'1':1,'2':2,'3':3,'4':4};
-  return { year: parseInt(m[1]), quarter: qmap[m[2]] || parseInt(m[2]) };
+  return { year: year, quarter: qmap[m[2]] || parseInt(m[2]) };
 }
 
 function qFindRow(rows, pattern, col, start) {
@@ -1034,9 +1036,7 @@ function handleFiles(fileList) {
     // Split into current and previous quarter by filename
     const parsed = xlsxFiles.map(f => ({ file: f, q: parseQuarterFromFilename(f.name) }));
     const quarters = [...new Set(parsed.filter(p => p.q.quarter).map(p => p.q.year * 10 + p.q.quarter))].sort((a, b) => b - a);
-    const currentQ = quarters[0];
-    const curr = parsed.filter(p => p.q.year * 10 + p.q.quarter === currentQ);
-    const prev = parsed.filter(p => p.q.year * 10 + p.q.quarter !== currentQ);
+    const currentQ = quarters[0]; // undefined if no filenames contain quarter info
 
     uploadedFiles = [];
     prevQuarterFiles = [];
@@ -1049,7 +1049,8 @@ function handleFiles(fileList) {
       const reader = new FileReader();
       reader.onload = e => {
         const entry = { name: p.file.name, data: e.result };
-        const isCurr = p.q.year * 10 + p.q.quarter === currentQ;
+        // If quarter info is in filename, use it; otherwise default to current quarter
+        const isCurr = !currentQ || (p.q.year * 10 + p.q.quarter === currentQ);
         if (isCurr) uploadedFiles.push(entry);
         else prevQuarterFiles.push(entry);
         loaded++;
@@ -1153,7 +1154,7 @@ async function processZipArchive(file) {
   let currentQ = null;
   if (auditMode === 'quarterly') {
     const quarters = [...new Set(xlsxFiles.map(f => {
-      const q = parseQuarterFromFilename(f.name);
+      const q = parseQuarterFromFilename(f.path);
       return q.year * 10 + q.quarter;
     }).filter(v => v > 0))].sort((a, b) => b - a);
     currentQ = quarters[0] || null;
@@ -1170,7 +1171,7 @@ async function processZipArchive(file) {
 
     let label = '就绪';
     if (auditMode === 'quarterly') {
-      const q = parseQuarterFromFilename(df.name);
+      const q = parseQuarterFromFilename(df.path);
       const qVal = q.year * 10 + q.quarter;
       if (qVal === currentQ) { uploadedFiles.push(entry); label = '当前季度'; }
       else { prevQuarterFiles.push(entry); label = '上季度'; }
@@ -1202,11 +1203,12 @@ async function processRarArchive(file) {
     for (const name of Object.keys(obj)) {
       if (name.startsWith('~$')) continue;
       const item = obj[name];
+      const fullPath = prefix + name;
       if (item instanceof File) {
-        if (name.endsWith('.docx')) docxFiles.push({ file: item, name: name });
-        else if (name.endsWith('.xlsx')) xlsxFiles.push({ file: item, name: name });
+        if (name.endsWith('.docx')) docxFiles.push({ file: item, name: name, fullPath: fullPath });
+        else if (name.endsWith('.xlsx')) xlsxFiles.push({ file: item, name: name, fullPath: fullPath });
       } else if (typeof item === 'object' && item !== null) {
-        collect(item, prefix + name + '/');
+        collect(item, fullPath + '/');
       }
     }
   }
@@ -1229,7 +1231,7 @@ async function processRarArchive(file) {
   let currentQ = null;
   if (auditMode === 'quarterly') {
     const quarters = [...new Set(xlsxFiles.map(f => {
-      const q = parseQuarterFromFilename(f.name);
+      const q = parseQuarterFromFilename(f.fullPath);
       return q.year * 10 + q.quarter;
     }).filter(v => v > 0))].sort((a, b) => b - a);
     currentQ = quarters[0] || null;
@@ -1246,7 +1248,7 @@ async function processRarArchive(file) {
 
     let label = '就绪';
     if (auditMode === 'quarterly') {
-      const q = parseQuarterFromFilename(df.name);
+      const q = parseQuarterFromFilename(df.fullPath);
       const qVal = q.year * 10 + q.quarter;
       if (qVal === currentQ) { uploadedFiles.push(entry); label = '当前季度'; }
       else { prevQuarterFiles.push(entry); label = '上季度'; }
@@ -1394,6 +1396,22 @@ async function startQuarterlyAudit() {
   }
   setStep(2, 'done');
   setProgress(60);
+
+  // Fallback: infer quarter from Excel date content if filename didn't have it
+  for (const doc of allDocs) {
+    if (!doc.year || !doc.quarter) {
+      const dStr = doc.this_date;
+      if (dStr) {
+        const dm = String(dStr).match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})/);
+        if (dm) {
+          const yr = parseInt(dm[1]);
+          const mo = parseInt(dm[2]);
+          doc.year = yr;
+          doc.quarter = mo <= 3 ? 1 : mo <= 6 ? 2 : mo <= 9 ? 3 : 4;
+        }
+      }
+    }
+  }
 
   // Step 3: 执行检查
   setStep(3, 'active');
