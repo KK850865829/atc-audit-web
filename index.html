@@ -644,6 +644,13 @@ function prevQuarterEndDate(year, quarter) {
   return year + '/' + m + '/' + d;
 }
 
+function prevQuarterStartDate(year, quarter) {
+  // First day of the previous quarter
+  if (quarter === 1) return (year - 1) + '/10/1';
+  const qStartMonth = { 2: 1, 3: 4, 4: 7 };
+  return year + '/' + qStartMonth[quarter] + '/1';
+}
+
 function parseQuarterFromFilename(path) {
   const m = path.match(/(\d{2,4})\s*年+?\s*第?\s*([一二三四1-4])\s*季度/);
   if (!m) return { year: null, quarter: null };
@@ -868,29 +875,24 @@ function runQuarterlyChecks(allDocs) {
       studentIssues.push('本次评估日期错误');
     }
 
-    // 2. 上次评估日期
+    // 2. 上次评估日期 — 允许上季度第一天之前的日期
     const expectedLast = prevQuarterEndDate(year, quarter);
-    if (doc.last_date && doc.last_date !== expectedLast) {
+    const prevQStart = prevQuarterStartDate(year, quarter);
+    if (doc.last_date && doc.last_date !== expectedLast && doc.last_date >= prevQStart) {
       studentIssues.push('上次评估日期错误');
     }
 
-    // 3. 已获得岗位资格
-    const qual = doc.qualification || '';
-    if (!qual || qual === '无' || qual === '无 ') {
-      studentIssues.push('放单扇区未填');
-    }
-
-    // 4. 责任教员评价
+    // 3. 责任教员评价
     if (!doc.eval_filled) {
       studentIssues.push('责任教员评价未填');
     }
 
-    // 5. 培训主管签名
+    // 4. 培训主管签名
     if (doc.trainer_sig && doc.trainer_sig !== CORRECT_TRAINER) {
       studentIssues.push('培训主管填错');
     }
 
-    // 6. 总第X份
+    // 5. 总第X份
     const prev = prevByName[name];
     if (prev && prev.total_seq !== null && doc.total_seq !== null) {
       const expectedTotal = prev.total_seq + 1;
@@ -899,7 +901,7 @@ function runQuarterlyChecks(allDocs) {
       }
     }
 
-    // 7. 本年度第X份
+    // 6. 本年度第X份
     if (doc.year_seq !== null && quarter) {
       if (doc.year_seq !== quarter) {
         studentIssues.push('本年度第' + doc.year_seq + '份错填成第' + quarter + '份');
@@ -911,7 +913,7 @@ function runQuarterlyChecks(allDocs) {
     }
   }
 
-  // 8. Cross-quarter copy-paste (same student)
+  // 7. Cross-quarter copy-paste (same student)
   const byStudent = {};
   for (const d of allDocs) {
     if (d.student_name) {
@@ -949,7 +951,7 @@ function runQuarterlyChecks(allDocs) {
     }
   }
 
-  // 9. Cross-student copy-paste (same quarter)
+  // 8. Cross-student copy-paste (same quarter)
   for (let i = 0; i < currentDocs.length; i++) {
     for (let j = i + 1; j < currentDocs.length; j++) {
       const d1 = currentDocs[i], d2 = currentDocs[j];
