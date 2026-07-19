@@ -754,14 +754,14 @@ function qExtractTextAfter(rows, headerPattern, skipPatterns) {
   return texts.join(' ');
 }
 
-function parseQuarterlyExcel(arrayBuffer, filename) {
+function parseQuarterlyExcel(arrayBuffer, filename, fullPath) {
   const wb = XLSX.read(arrayBuffer, { type: 'array', cellDates: true });
   const ws = wb.Sheets[wb.SheetNames[0]];
   const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: true });
 
   const nameMatch = filename.match(/[（(]([^）)]+)[）)]/);
   const name = nameMatch ? nameMatch[1].trim() : null;
-  const qInfo = parseQuarterFromFilename(filename);
+  const qInfo = parseQuarterFromFilename(fullPath || filename);
 
   const info = {
     filename: filename,
@@ -1186,7 +1186,7 @@ async function processZipArchive(file) {
   for (let i = 0; i < targetFiles.length; i++) {
     const df = targetFiles[i];
     const data = await zip.file(df.path).async('arraybuffer');
-    const entry = { name: df.name, data };
+    const entry = { name: df.name, data, fullPath: df.path };
 
     let label = '就绪';
     if (auditMode === 'quarterly') {
@@ -1271,7 +1271,7 @@ async function processRarArchive(file) {
   for (let i = 0; i < targetFiles.length; i++) {
     const df = targetFiles[i];
     const data = await df.file.arrayBuffer();
-    const entry = { name: df.name, data };
+    const entry = { name: df.name, data, fullPath: df.fullPath };
 
     let label = '就绪';
     if (auditMode === 'quarterly') {
@@ -1402,7 +1402,7 @@ async function startQuarterlyAudit() {
   for (let i = 0; i < prevQuarterFiles.length; i++) {
     const f = prevQuarterFiles[i];
     try {
-      const info = parseQuarterlyExcel(f.data, f.name);
+      const info = parseQuarterlyExcel(f.data, f.name, f.fullPath);
       if (info) { info._is_current = false; allDocs.push(info); }
     } catch (err) {
       failed.push({ name: f.name, error: err.message });
@@ -1414,7 +1414,7 @@ async function startQuarterlyAudit() {
   for (let i = 0; i < uploadedFiles.length; i++) {
     const f = uploadedFiles[i];
     try {
-      const info = parseQuarterlyExcel(f.data, f.name);
+      const info = parseQuarterlyExcel(f.data, f.name, f.fullPath);
       if (info) { info._is_current = true; allDocs.push(info); }
     } catch (err) {
       failed.push({ name: f.name, error: err.message });
@@ -1424,17 +1424,21 @@ async function startQuarterlyAudit() {
   setStep(2, 'done');
   setProgress(60);
 
-  // Fallback: infer quarter from Excel date content if filename didn't have it
+  // Fallback: infer quarter from last_date (more reliable than this_date)
+  // Only when path-based quarter detection failed (e.g. direct xlsx upload)
   for (const doc of allDocs) {
     if (!doc.year || !doc.quarter) {
-      const dStr = doc.this_date;
+      const dStr = doc.last_date;
       if (dStr) {
         const dm = String(dStr).match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})/);
         if (dm) {
           const yr = parseInt(dm[1]);
           const mo = parseInt(dm[2]);
-          doc.year = yr;
-          doc.quarter = mo <= 3 ? 1 : mo <= 6 ? 2 : mo <= 9 ? 3 : 4;
+          // last_date is end of previous quarter, so current quarter starts next month
+          const currentMonth = mo + 1;
+          doc.year = currentMonth > 12 ? yr + 1 : yr;
+          const adjMonth = currentMonth > 12 ? 1 : currentMonth;
+          doc.quarter = adjMonth <= 3 ? 1 : adjMonth <= 6 ? 2 : adjMonth <= 9 ? 3 : 4;
         }
       }
     }
