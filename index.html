@@ -85,7 +85,7 @@ html,body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft 
       <div class="upload-zone" id="dropZone">
         <div class="upload-icon">&#128196;</div>
         <div class="upload-text">点击选择文件或拖拽到此处</div>
-        <div class="upload-hint">支持 RAR / ZIP 压缩包，或选择文件夹</div>
+        <div class="upload-hint">支持 RAR / ZIP 压缩包（浏览器直接解压），或选择文件夹</div>
         <input type="file" id="fileInput" accept=".rar,.zip" style="display:none">
         <input type="file" id="folderInput" webkitdirectory style="display:none">
       </div>
@@ -687,43 +687,87 @@ async function processArchive(file) {
   setStep(1, 'active');
   setProgress(10);
   try {
-    const zip = await JSZip.loadAsync(file);
-    const docxFiles = [];
-    zip.forEach((path, entry) => {
-      if (!entry.dir && path.endsWith('.docx') && !path.split('/').pop().startsWith('~$')) {
-        docxFiles.push({ path, name: path.split('/').pop() });
-      }
-    });
+    // Detect file type by magic bytes
+    const header = new Uint8Array(await file.slice(0, 4).arrayBuffer());
+    const isRar = header[0]===0x52 && header[1]===0x61 && header[2]===0x72 && header[3]===0x21; // "Rar!"
 
-    if (docxFiles.length === 0) {
-      showError('压缩包中未找到docx文件');
-      setStep(1, 'done');
-      return;
+    if (isRar) {
+      await processRarArchive(file);
+    } else {
+      await processZipArchive(file);
     }
-
-    uploadedFiles = [];
-    const listEl = document.getElementById('fileList');
-    listEl.style.display = 'block';
-    listEl.innerHTML = '';
-
-    for (let i = 0; i < docxFiles.length; i++) {
-      const df = docxFiles[i];
-      const data = await zip.file(df.path).async('arraybuffer');
-      uploadedFiles.push({ name: df.name, data });
-      const item = document.createElement('div');
-      item.className = 'file-item';
-      item.innerHTML = '<span class="file-name">' + df.name + '</span><span class="file-status ok">就绪</span>';
-      listEl.appendChild(item);
-      setProgress(10 + (i / docxFiles.length) * 15);
-    }
-
-    setStep(1, 'done');
-    setProgress(25);
-    document.getElementById('btnStart').disabled = false;
   } catch (err) {
-    showError('解压失败：' + err.message);
+    showError('解压失败：' + err.message + (err.message && err.message.includes('Corrupted') ? '（该文件可能不是有效的压缩包，请尝试转为ZIP格式后上传）' : ''));
     setStep(1, 'done');
   }
+}
+
+async function processZipArchive(file) {
+  const zip = await JSZip.loadAsync(file);
+  const docxFiles = [];
+  zip.forEach((path, entry) => {
+    if (!entry.dir && path.endsWith('.docx') && !path.split('/').pop().startsWith('~$')) {
+      docxFiles.push({ path, name: path.split('/').pop() });
+    }
+  });
+  if (docxFiles.length === 0) { showError('压缩包中未找到docx文件'); setStep(1, 'done'); return; }
+  uploadedFiles = [];
+  const listEl = document.getElementById('fileList');
+  listEl.style.display = 'block'; listEl.innerHTML = '';
+  for (let i = 0; i < docxFiles.length; i++) {
+    const df = docxFiles[i];
+    const data = await zip.file(df.path).async('arraybuffer');
+    uploadedFiles.push({ name: df.name, data });
+    const item = document.createElement('div');
+    item.className = 'file-item';
+    item.innerHTML = '<span class="file-name">' + df.name + '</span><span class="file-status ok">就绪</span>';
+    listEl.appendChild(item);
+    setProgress(10 + (i / docxFiles.length) * 15);
+  }
+  setStep(1, 'done'); setProgress(25);
+  document.getElementById('btnStart').disabled = false;
+}
+
+async function processRarArchive(file) {
+  // Use libarchive.js (WASM-based, supports RAR v4/v5) from jsdelivr CDN
+  const { Archive } = await import('https://cdn.jsdelivr.net/npm/libarchive.js/dist/libarchive.js');
+  await Archive.init({ workerUrl: 'https://cdn.jsdelivr.net/npm/libarchive.js/dist/worker-bundle.js' });
+
+  const archiveInstance = await Archive.open(file);
+  const filesObj = await archiveInstance.extractFiles();
+
+  // Recursively collect .docx files from extracted tree
+  const docxFiles = [];
+  function collect(obj, prefix) {
+    for (const name of Object.keys(obj)) {
+      if (name.startsWith('~$')) continue;
+      const item = obj[name];
+      if (item instanceof File) {
+        if (name.endsWith('.docx')) docxFiles.push({ file: item, name: name });
+      } else if (typeof item === 'object' && item !== null) {
+        collect(item, prefix + name + '/');
+      }
+    }
+  }
+  collect(filesObj, '');
+
+  if (docxFiles.length === 0) { showError('压缩包中未找到docx文件'); setStep(1, 'done'); return; }
+
+  uploadedFiles = [];
+  const listEl = document.getElementById('fileList');
+  listEl.style.display = 'block'; listEl.innerHTML = '';
+  for (let i = 0; i < docxFiles.length; i++) {
+    const df = docxFiles[i];
+    const data = await df.file.arrayBuffer();
+    uploadedFiles.push({ name: df.name, data });
+    const item = document.createElement('div');
+    item.className = 'file-item';
+    item.innerHTML = '<span class="file-name">' + df.name + '</span><span class="file-status ok">就绪</span>';
+    listEl.appendChild(item);
+    setProgress(10 + (i / docxFiles.length) * 15);
+  }
+  setStep(1, 'done'); setProgress(25);
+  document.getElementById('btnStart').disabled = false;
 }
 
 function showError(msg) {
