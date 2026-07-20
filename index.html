@@ -150,7 +150,7 @@ let prevQuarterFiles = []; // [{name, data: ArrayBuffer}] for previous quarter x
 const CORRECT_TRAINER = '刘兵';
 const CORRECT_DIRECTOR = '张文轩';
 const SIMILARITY_THRESHOLD = 0.75;
-const HORIZONTAL_THRESHOLD = 0.85;
+const HORIZONTAL_THRESHOLD = 0.70;
 
 // ============================================================
 // Word XML 命名空间
@@ -981,7 +981,7 @@ function runQuarterlyChecks(allDocs) {
       ];
       for (const [fk, fn] of fields) {
         const sim = calcSimilarity(d1[fk] || '', d2[fk] || '');
-        if (sim >= SIMILARITY_THRESHOLD && (d1[fk] || '').trim() && (d2[fk] || '').trim()) {
+        if (sim >= HORIZONTAL_THRESHOLD && (d1[fk] || '').trim() && (d2[fk] || '').trim()) {
           const msg1 = fn + '与' + d2.student_name + '内容高度相似（相似度' + Math.round(sim * 100) + '%），疑似复制粘贴';
           const msg2 = fn + '与' + d1.student_name + '内容高度相似（相似度' + Math.round(sim * 100) + '%），疑似复制粘贴';
           for (const [d, msg] of [[d1, msg1], [d2, msg2]]) {
