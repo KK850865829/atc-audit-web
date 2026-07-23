@@ -363,9 +363,9 @@ function parseDocInfo(rows, filename) {
     info.summary_full = summaryText;
     info.summary_has_overview = /总体情况/.test(summaryText);
     info.summary_has_detail = /具体情况/.test(summaryText);
-    info.summary_has_next = /下月重点/.test(summaryText);
+    info.summary_has_next = /(下月重点|后期目标)/.test(summaryText);
     let body = summaryText.replace(/见习管制员本月培训总结/, '').trim();
-    body = body.replace(/(总体情况|具体情况|下月重点)/g, '').trim();
+    body = body.replace(/(总体情况|具体情况|下月重点|后期目标)/g, '').trim();
     info.summary_body = body;
   } else {
     info.summary_full = '';
