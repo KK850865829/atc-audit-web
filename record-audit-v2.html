@@ -1109,7 +1109,7 @@ uploadArea.addEventListener('dragleave',function(e){e.preventDefault();e.stopPro
 uploadArea.addEventListener('drop',function(e){e.preventDefault();e.stopPropagation();uploadArea.classList.remove('dragover');if(e.dataTransfer.files.length>0){currentResults=[];processFiles(Array.from(e.dataTransfer.files)).catch(function(err){progressText.textContent='处理异常：'+err.message;});}});
 loginModal.addEventListener('click',function(e){if(e.target===loginModal) loginModal.classList.remove('show');});
 
-})();
+)})();
 </script>
 </body>
 </html>
