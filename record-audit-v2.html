@@ -1100,7 +1100,7 @@ exportBtn.addEventListener('click',function(){
   var url=URL.createObjectURL(blob);var a=document.createElement('a');a.href=url;a.download='审核记录_'+today()+'.csv';document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);
 });
 clearBtn.addEventListener('click',function(){if(!confirm('确定要清空所有审核记录吗？此操作不可撤销。')) return;localStorage.removeItem(STORAGE_KEY);currentResults=[];resultCard.style.display='none';saveRecordsToGitHub([]).then(function(){console.log('GitHub清空成功');}).catch(function(e){console.warn('GitHub清空失败:',e);});renderAdminPanel();});
-document.getElementById('syncBtn').addEventListener('click',adminSyncFromGitHub);
+var syncBtnEl=document.getElementById('syncBtn');if(syncBtnEl)syncBtnEl.addEventListener('click',adminSyncFromGitHub);
 
 uploadArea.addEventListener('click',function(){fileInput.click();});
 fileInput.addEventListener('change',function(e){if(e.target.files.length>0){currentResults=[];processFiles(Array.from(e.target.files)).catch(function(err){progressText.textContent='处理异常：'+err.message;});e.target.value='';}});
