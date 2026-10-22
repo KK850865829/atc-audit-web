@@ -1060,22 +1060,44 @@ const dropZone = document.getElementById('dropZone');
 const fileInput = document.getElementById('fileInput');
 const folderInput = document.getElementById('folderInput');
 
-dropZone.addEventListener('click', () => fileInput.click());
-dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
-dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
-dropZone.addEventListener('drop', e => {
-  e.preventDefault();
-  dropZone.classList.remove('dragover');
-  handleFiles(e.dataTransfer.files);
+// 全局兜底：任何未捕获的运行时错误 / Promise 拒绝都在页面提示，避免“点了没反应”
+window.addEventListener('error', function (ev) {
+  showError('脚本错误：' + (ev.message || '未知错误') + (ev.lineno ? '（第 ' + ev.lineno + ' 行）' : ''));
+});
+window.addEventListener('unhandledrejection', function (ev) {
+  const r = ev.reason;
+  showError('处理失败：' + ((r && r.message) ? r.message : String(r)));
 });
 
-fileInput.addEventListener('change', e => handleFiles(e.target.files));
-folderInput.addEventListener('change', e => handleFiles(e.target.files));
+if (dropZone && fileInput) {
+  dropZone.addEventListener('click', () => fileInput.click());
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('dragover');
+    try { handleFiles(e.dataTransfer.files); }
+    catch (err) { showError('读取文件失败：' + err.message); }
+  });
+}
+
+if (fileInput) {
+  fileInput.addEventListener('change', e => {
+    try { handleFiles(e.target.files); }
+    catch (err) { showError('读取文件失败：' + err.message); }
+  });
+}
+if (folderInput) {
+  folderInput.addEventListener('change', e => {
+    try { handleFiles(e.target.files); }
+    catch (err) { showError('读取文件失败：' + err.message); }
+  });
+}
 
 function handleFiles(fileList) {
   const files = Array.from(fileList);
-  const docxFiles = files.filter(f => f.name.endsWith('.docx') && !f.name.startsWith('~$'));
-  const xlsxFiles = files.filter(f => f.name.endsWith('.xlsx') && !f.name.startsWith('~$'));
+  const docxFiles = files.filter(f => f.name.toLowerCase().endsWith('.docx') && !f.name.startsWith('~$'));
+  const xlsxFiles = files.filter(f => f.name.toLowerCase().endsWith('.xlsx') && !f.name.startsWith('~$'));
 
   // Direct xlsx files → quarterly mode
   if (xlsxFiles.length > 0 && docxFiles.length === 0) {
@@ -1117,7 +1139,7 @@ function handleFiles(fileList) {
 
   if (docxFiles.length === 0) {
     // Check if it's a RAR/ZIP
-    const archives = files.filter(f => f.name.endsWith('.rar') || f.name.endsWith('.zip'));
+    const archives = files.filter(f => { const n = f.name.toLowerCase(); return n.endsWith('.rar') || n.endsWith('.zip'); });
     if (archives.length > 0) {
       processArchive(archives[0]);
       return;
@@ -1322,31 +1344,41 @@ async function processRarArchive(file) {
 }
 
 function showError(msg) {
+  try { console.error('[ATC审核]', msg); } catch (e) {}
   const el = document.getElementById('errorMsg');
+  if (!el) return;
   el.textContent = msg;
   el.style.display = 'block';
 }
 
 function showSection(id) {
   document.querySelectorAll('.section').forEach(s => s.classList.remove('visible'));
-  document.getElementById(id).classList.add('visible');
+  const el = document.getElementById(id);
+  if (el) el.classList.add('visible');
 }
 
 function setStep(n, state) {
   const el = document.getElementById('step' + n);
+  if (!el) return;
   el.className = 'progress-step ' + state;
-  if (state === 'done') el.querySelector('.step-icon').innerHTML = '&#10003;';
+  if (state === 'done') {
+    const icon = el.querySelector('.step-icon');
+    if (icon) icon.innerHTML = '&#10003;';
+  }
 }
 
 function setProgress(pct) {
-  document.getElementById('progressFill').style.width = pct + '%';
+  const el = document.getElementById('progressFill');
+  if (el) el.style.width = pct + '%';
 }
 
 function resetSteps() {
   for (let i = 1; i <= 4; i++) {
     const el = document.getElementById('step' + i);
+    if (!el) continue;
     el.className = 'progress-step';
-    el.querySelector('.step-icon').textContent = i;
+    const icon = el.querySelector('.step-icon');
+    if (icon) icon.textContent = i;
   }
   setProgress(0);
 }
