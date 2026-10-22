@@ -153,6 +153,32 @@ const SIMILARITY_THRESHOLD = 0.75;
 const HORIZONTAL_THRESHOLD = 0.70;
 
 // ============================================================
+// 学员 → 组别（来自「教员学员对照表 26.10.10」，姓名已去除入学年份数字）
+// ============================================================
+const STUDENT_GROUP = {
+  // A1
+  '黄星云':'A1','李子诚':'A1','曹育宁':'A1','宁海越':'A1','黄楚珂':'A1','林能茂':'A1',
+  // A2
+  '唐泺汶':'A2','杨明':'A2','魏畅':'A2','杭昊天':'A2','林子杰':'A2','唐帅杰':'A2',
+  // B1
+  '林筠皓':'B1','陈巧巧':'B1','黄泳鑫':'B1','宋颖渊':'B1','黄筱':'B1',
+  // B2
+  '李金龙':'B2','李幸旭':'B2','王锦文':'B2','胡和林':'B2','马子轩':'B2','王辰东':'B2'
+};
+// 组别 → 培训主管（A1/A2 为柳青，B1/B2 为隗英剑）
+const GROUP_TRAINING_DIRECTOR = { 'A1':'柳青','A2':'柳青','B1':'隗英剑','B2':'隗英剑' };
+
+// 归一化姓名：去除空白与末尾年份数字
+function normalizeStudentName(name) {
+  return String(name || '').replace(/[\s\u3000]/g, '').replace(/\d+$/, '');
+}
+// 根据学员名推断应填培训主管；无法判定组别时返回 null（跳过该项检查）
+function expectedTrainingDirector(name) {
+  const grp = STUDENT_GROUP[normalizeStudentName(name)];
+  return grp ? GROUP_TRAINING_DIRECTOR[grp] : null;
+}
+
+// ============================================================
 // Word XML 命名空间
 // ============================================================
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
@@ -577,12 +603,13 @@ function runChecks(allDocs) {
     }
   }
 
-  // 10. 科室培训主管签名是否正确
+  // 10. 科室培训主管签名是否正确（按学员所在组判定：A1/A2=柳青，B1/B2=隗英剑）
   for (const doc of allDocs) {
     const name = doc.student_name, m = doc.file_month;
-    if (doc.trainer_sig_name && doc.trainer_sig_name !== CORRECT_TRAINER) {
+    const expDir = expectedTrainingDirector(name);
+    if (expDir && doc.trainer_sig_name && doc.trainer_sig_name !== expDir) {
       issues.push([name, m + '月',
-        '【' + m + '月】科室培训主管签名为「' + doc.trainer_sig_name + '」，应为「' + CORRECT_TRAINER + '」',
+        '【' + m + '月】科室培训主管签名为「' + doc.trainer_sig_name + '」，应为「' + expDir + '」',
         '【' + m + '月】请核实并更正签名信息']);
     }
   }
@@ -904,9 +931,10 @@ function runQuarterlyChecks(allDocs) {
       studentIssues.push('责任教员评价未填');
     }
 
-    // 4. 培训主管签名
-    if (doc.trainer_sig && doc.trainer_sig !== CORRECT_TRAINER) {
-      studentIssues.push('培训主管填错');
+    // 4. 培训主管签名（按学员所在组判定：A1/A2=柳青，B1/B2=隗英剑）
+    const expDir = expectedTrainingDirector(name);
+    if (expDir && doc.trainer_sig && doc.trainer_sig !== expDir) {
+      studentIssues.push('培训主管应为「' + expDir + '」，实为「' + doc.trainer_sig + '」');
     }
 
     // 5. 总第X份
